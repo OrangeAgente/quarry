@@ -801,8 +801,28 @@ h1.page-title em { font-style: italic; color: var(--accent); }
   text-align: left;
 }
 .doc-content th { background: var(--bg-subtle); font-weight: 600; }
-.doc-content img { max-width: 100%; height: auto; border-radius: 6px; margin: 12px 0; }
+.doc-content img {
+  max-width: 100%;
+  max-height: 480px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+  margin: 12px 0;
+  object-fit: contain;
+}
 .doc-content .muted { color: var(--fg-subtle); font-style: italic; }
+.doc-content pre.plain-text {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.7;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
 
 /* Extraction rail */
 .rail {

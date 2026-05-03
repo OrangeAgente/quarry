@@ -23,7 +23,7 @@ from jobs import (
     create_job, get_job, job_state, run_job_in_background,
     get_sidebar_jobs, get_in_memory_job_ids,
 )
-from markdown_render import render_markdown
+from markdown_render import render_markdown, to_plain_text
 from models import SearchRecord
 
 app = Flask(__name__)
@@ -224,6 +224,7 @@ def document_view(doc_id):
 
     content_html = render_markdown(doc.content_markdown or "")
     content_fit_html = render_markdown(doc.content_fit) if doc.content_fit else ""
+    content_plain = to_plain_text(doc.content_markdown or "")
 
     return render_template(
         "document.html",
@@ -235,6 +236,7 @@ def document_view(doc_id):
         related=related,
         content_html=content_html,
         content_fit_html=content_fit_html,
+        content_plain=content_plain,
     )
 
 

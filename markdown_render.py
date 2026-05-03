@@ -1,3 +1,5 @@
+import re
+
 import bleach
 import markdown as _md
 
@@ -46,3 +48,24 @@ def render_markdown(text: str) -> str:
         strip=True,
     )
     return bleach.linkify(cleaned, callbacks=[_harden_links])
+
+
+def to_plain_text(text: str) -> str:
+    """Strip images, link URLs, raw HTML, and reference defs from a markdown
+    source. Headings, lists, and paragraph breaks are preserved as text."""
+    if not text:
+        return ""
+    out = text
+    # Image syntax: ![alt](url) and ![alt][ref] → drop entirely
+    out = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", out)
+    out = re.sub(r"!\[[^\]]*\]\[[^\]]*\]", "", out)
+    # Link syntax: [text](url) and [text][ref] → keep just text
+    out = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", out)
+    out = re.sub(r"\[([^\]]+)\]\[[^\]]*\]", r"\1", out)
+    # Reference link definitions: "[ref]: https://..." on their own line
+    out = re.sub(r"^\s*\[[^\]]+\]:\s*\S+.*$", "", out, flags=re.MULTILINE)
+    # Raw HTML tags (crawled markdown sometimes embeds them)
+    out = re.sub(r"<[^>]+>", "", out)
+    # Collapse runs of blank lines
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
