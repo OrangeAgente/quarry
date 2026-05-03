@@ -47,7 +47,8 @@ All settings come from `.env` (see `.env.example`):
 | `DB_PATH` | SQLite file path | `data/research.db` |
 | `CRAWL_TIMEOUT` | Per-page crawl timeout (ms) | `30000` |
 | `FLASK_HOST` / `FLASK_PORT` | Bind address | `0.0.0.0:5000` |
-| `FLASK_DEBUG` | Flask debug + auto-reload | `true` |
+| `FLASK_DEBUG` | Flask debug + auto-reload | `false` |
+| `FLASK_SECRET_KEY` | Override Flask session signing key. Empty → fresh random key per process start | *(empty)* |
 
 Switching LLM provider: anything LiteLLM supports works (e.g. `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`). Set the matching `*_API_KEY` env var that LiteLLM expects for that vendor.
 
@@ -93,6 +94,20 @@ documents       crawled pages, keyed by UUID, unique on (url, search_query)
 extractions     LLM output per document, with the prompt that produced it
 searches        one row per agent run, with job_id back-reference for trace lookup
 ```
+
+## Security posture
+
+Designed for **single-user local use** behind a firewall. Some specifics:
+
+- **No authentication.** Anyone who can reach the port can run searches and burn your LLM API quota. Don't expose the port directly to the internet — put it behind Tailscale, a reverse proxy with auth, or rebind `FLASK_HOST=127.0.0.1` for localhost-only.
+- **`FLASK_DEBUG` defaults to `false`** in `.env.example`. Never set it to `true` on a host reachable from untrusted networks — Werkzeug's debugger console is an RCE primitive.
+- **Crawled HTML is treated as untrusted.** Page titles, URLs, and error strings are HTML-escaped before being inserted into the live agent log. Server-side templates use Jinja autoescape throughout.
+- **Inputs are bounded:** query ≤ 500 chars, extraction prompt ≤ 5000 chars, `max_results` clamped to 1–20.
+- **`flask_secret_key` is randomized per process start** unless you set `FLASK_SECRET_KEY` in `.env`. Sessions/flash messages reset on restart (they're not persistent here, so that's fine).
+- **Container runs as a non-root `app` user** (UID 1000). The bind-mounted `data/` directory must be writable by that UID on the host.
+- **Prompt injection is possible** — the LLM extractor sees raw page content. Treat extraction output as suggestion, not ground truth. Don't pipe it into anything that auto-executes.
+- **No CSRF tokens.** Acceptable for a localhost-only app where the SameSite=Lax default on session cookies blocks the relevant cross-site POST scenarios. If you front this with a real domain and add auth, add CSRF tokens too.
+- **DDG returns external URLs only.** No allowlist on what the crawler will fetch — a crafted query could in theory point the crawler at a private network address. Out of scope today; consider an SSRF guard if you ever expose this.
 
 ## Notes & caveats
 

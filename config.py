@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     crawl_timeout: int = 30000
     flask_host: str = "0.0.0.0"
     flask_port: int = 5000
-    flask_debug: bool = True
+    flask_debug: bool = False
+    flask_secret_key: str = ""
 
     class Config:
         env_file = ".env"

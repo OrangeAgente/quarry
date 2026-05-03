@@ -2,6 +2,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
+from html import escape as _esc
 from urllib.parse import urlparse
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
@@ -82,14 +83,14 @@ async def crawl_urls_with_progress(search_results: list[SearchResult], search_qu
         async def crawl_one(sr: SearchResult) -> Document | None:
             async with semaphore:
                 update_url(job_id, sr.url, status="fetching")
-                add_log(job_id, "info", f"fetching <code>{sr.url}</code>")
+                add_log(job_id, "info", f"fetching <code>{_esc(sr.url)}</code>")
                 try:
                     result = await crawler.arun(url=sr.url, config=run_cfg)
                     if not result.success:
                         msg = (result.error_message or "unknown error")[:140]
                         update_url(job_id, sr.url, status="error", error=msg)
                         inc_counter(job_id, "crawl_done")
-                        add_log(job_id, "err", f"failed <code>{sr.url}</code>: {msg}")
+                        add_log(job_id, "err", f"failed <code>{_esc(sr.url)}</code>: {_esc(msg)}")
                         return None
 
                     parsed = urlparse(result.url)
@@ -122,12 +123,12 @@ async def crawl_urls_with_progress(search_results: list[SearchResult], search_qu
                         links_internal=internal_links, links_external=external_links,
                     )
                     inc_counter(job_id, "crawl_done")
-                    add_log(job_id, "ok", f"<em>{title[:80]}</em> · {word_count:,}w")
+                    add_log(job_id, "ok", f"<em>{_esc(title[:80])}</em> · {word_count:,}w")
                     return doc
                 except Exception as e:
                     update_url(job_id, sr.url, status="error", error=str(e)[:140])
                     inc_counter(job_id, "crawl_done")
-                    add_log(job_id, "err", f"exception on <code>{sr.url}</code>: {str(e)[:120]}")
+                    add_log(job_id, "err", f"exception on <code>{_esc(sr.url)}</code>: {_esc(str(e)[:120])}")
                     return None
 
         results = await asyncio.gather(*[crawl_one(sr) for sr in search_results])

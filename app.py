@@ -1,5 +1,6 @@
 import asyncio
 import json
+import secrets
 import time
 import uuid
 from datetime import datetime, timezone
@@ -24,7 +25,7 @@ from jobs import (
 from models import SearchRecord
 
 app = Flask(__name__)
-app.secret_key = "web-researcher-secret-key"
+app.secret_key = settings.flask_secret_key or secrets.token_hex(32)
 
 
 @app.context_processor
@@ -90,10 +91,13 @@ def index():
 
 @app.route("/search", methods=["POST"])
 def search():
-    query = request.form.get("query", "").strip()
-    max_results = int(request.form.get("max_results", 5))
+    query = request.form.get("query", "").strip()[:500]
+    try:
+        max_results = max(1, min(20, int(request.form.get("max_results", 5))))
+    except (TypeError, ValueError):
+        max_results = 5
     extract = request.form.get("extract") == "on"
-    extract_prompt = request.form.get("extract_prompt", "").strip()
+    extract_prompt = request.form.get("extract_prompt", "").strip()[:5000]
 
     if not query:
         flash("Please enter a search query.", "error")
@@ -206,7 +210,7 @@ def extract_document(doc_id):
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        prompt = request.form.get("prompt", "").strip()
+        prompt = request.form.get("prompt", "").strip()[:5000]
         try:
             from extractor import extract_from_document
             extraction = extract_from_document(doc, prompt)

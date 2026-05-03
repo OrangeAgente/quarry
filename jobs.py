@@ -5,6 +5,7 @@ import traceback
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
+from html import escape as _esc
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -190,7 +191,7 @@ def _run_thread(job_id: str) -> None:
     except Exception as e:
         traceback.print_exc()
         update_job(job_id, stage="error", done=True, error=str(e))
-        add_log(job_id, "err", f"worker crashed: {e}")
+        add_log(job_id, "err", f"worker crashed: {_esc(str(e))}")
 
 
 async def _run_job(job_id: str) -> None:
@@ -206,7 +207,7 @@ async def _run_job(job_id: str) -> None:
 
     try:
         update_job(job_id, stage="search")
-        add_log(job_id, "info", f'searching duckduckgo for <em>"{job.query}"</em>')
+        add_log(job_id, "info", f'searching duckduckgo for <em>"{_esc(job.query)}"</em>')
         search_results = web_search(job.query, max_results=job.max_results)
         update_job(job_id, search_total=len(search_results))
 
@@ -242,13 +243,13 @@ async def _run_job(job_id: str) -> None:
             update_job(job_id, stage="extract", extract_total=len(documents))
             add_log(job_id, "info", f"running llm extraction on <em>{len(documents)}</em> documents")
             for doc in documents:
-                add_log(job_id, "info", f"extracting <em>{(doc.title or doc.domain)[:70]}</em>")
+                add_log(job_id, "info", f"extracting <em>{_esc((doc.title or doc.domain)[:70])}</em>")
                 extraction = extract_from_document(doc, job.extract_prompt)
                 if extraction:
                     await insert_extraction(extraction)
-                    add_log(job_id, "ok", f"extracted <code>{doc.domain}</code>")
+                    add_log(job_id, "ok", f"extracted <code>{_esc(doc.domain)}</code>")
                 else:
-                    add_log(job_id, "warn", f"no extraction for <code>{doc.domain}</code>")
+                    add_log(job_id, "warn", f"no extraction for <code>{_esc(doc.domain)}</code>")
                 inc_counter(job_id, "extract_done")
 
         update_job(job_id, stage="done", done=True)
@@ -256,4 +257,4 @@ async def _run_job(job_id: str) -> None:
     except Exception as e:
         traceback.print_exc()
         update_job(job_id, stage="error", done=True, error=str(e))
-        add_log(job_id, "err", f"job failed: {e}")
+        add_log(job_id, "err", f"job failed: {_esc(str(e))}")

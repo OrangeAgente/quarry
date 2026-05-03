@@ -5,13 +5,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg2 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN useradd -m -u 1000 -s /bin/bash app
+
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && crawl4ai-setup
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+RUN chown -R app:app /app
+USER app
+
+# Install Chromium into /home/app/.cache so the runtime user can read it
+RUN crawl4ai-setup
+
+COPY --chown=app:app . .
 RUN mkdir -p /app/data
 
 EXPOSE 5000
