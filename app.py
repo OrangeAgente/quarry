@@ -1,11 +1,12 @@
 import asyncio
+import hashlib
 import json
 import secrets
 import time
 import uuid
 from datetime import datetime, timezone
 
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, Response, render_template, request, redirect, url_for, flash, stream_with_context
 
 from config import settings
 from search import web_search
@@ -16,12 +17,13 @@ from storage import (
     get_extractions_for_document, get_search_history,
     count_documents, count_searches, count_extractions, count_domains,
     get_doc_ids_with_extractions, get_search_history_enriched,
-    get_related_documents,
+    get_related_documents, search_documents_fts,
 )
 from jobs import (
     create_job, get_job, job_state, run_job_in_background,
     get_sidebar_jobs, get_in_memory_job_ids,
 )
+from markdown_render import render_markdown
 from models import SearchRecord
 
 app = Flask(__name__)
@@ -125,6 +127,35 @@ def api_job(job_id):
     return state
 
 
+@app.route("/api/job/<job_id>/stream")
+def api_job_stream(job_id):
+    def gen():
+        last_hash = None
+        # Cap the stream at ~10 minutes to bound resource use
+        for _ in range(2400):
+            state = job_state(job_id)
+            if not state:
+                yield 'event: error\ndata: {"error":"not found"}\n\n'
+                return
+            payload = json.dumps(state)
+            h = hashlib.md5(payload.encode()).hexdigest()
+            if h != last_hash:
+                yield f"data: {payload}\n\n"
+                last_hash = h
+            if state.get("done"):
+                return
+            time.sleep(0.25)
+
+    return Response(
+        stream_with_context(gen()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.route("/results/<job_id>")
 def results_view(job_id):
     job = get_job(job_id)
@@ -191,6 +222,9 @@ def document_view(doc_id):
         doc.id, doc.search_query or "", doc.domain or "", limit=3
     ))
 
+    content_html = render_markdown(doc.content_markdown or "")
+    content_fit_html = render_markdown(doc.content_fit) if doc.content_fit else ""
+
     return render_template(
         "document.html",
         doc=doc,
@@ -199,6 +233,8 @@ def document_view(doc_id):
         metadata=metadata,
         reading_min=reading_min,
         related=related,
+        content_html=content_html,
+        content_fit_html=content_fit_html,
     )
 
 
@@ -244,7 +280,10 @@ def history():
 @app.route("/documents")
 def documents_list():
     search_filter = request.args.get("search", "").strip()
-    if search_filter:
+    full_text = request.args.get("q", "").strip()[:200]
+    if full_text:
+        documents = run_async(search_documents_fts(full_text, search_filter or None))
+    elif search_filter:
         documents = run_async(get_documents_by_search(search_filter))
     else:
         documents = run_async(get_all_documents())
@@ -259,6 +298,7 @@ def documents_list():
         ext_ids=ext_ids,
         domain_counts=domain_counts,
         search_filter=search_filter,
+        full_text_query=full_text,
     )
 
 

@@ -6,3 +6,5 @@ pydantic-settings>=2.0
 aiosqlite>=0.20
 python-dotenv>=1.0
 rich>=13.0
+markdown>=3.6
+bleach>=6.1

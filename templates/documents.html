@@ -8,7 +8,12 @@
   <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px;">
     <div>
       <h1 class="page-title">Library <em>&middot;</em> <span style="font-family: var(--font-mono); font-size: 16px; color: var(--fg-subtle); letter-spacing: 0;" id="libCount">{{ documents|length }} documents</span></h1>
-      {% if search_filter %}
+      {% if full_text_query %}
+      <p class="page-sub">
+        <strong>{{ documents|length }}</strong> match{{ '' if documents|length == 1 else 'es' }} for <em>"{{ full_text_query }}"</em>{% if search_filter %} within search <em>"{{ search_filter }}"</em>{% endif %} &middot;
+        <a href="/documents" style="color: var(--accent);">clear</a>
+      </p>
+      {% elif search_filter %}
       <p class="page-sub">
         Filtered to documents from search <em>"{{ search_filter }}"</em> &middot;
         <a href="/documents" style="color: var(--accent);">clear filter</a>
@@ -26,10 +31,11 @@
   </div>
 
   {% if documents %}
-  <div class="library-toolbar">
+  <form class="library-toolbar" method="get" action="/documents" id="libForm">
+    {% if search_filter %}<input type="hidden" name="search" value="{{ search_filter }}">{% endif %}
     <div class="lib-search">
       <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM11 11l3.5 3.5"/></svg>
-      <input id="libSearch" placeholder="Search titles, domains, content…">
+      <input id="libSearch" name="q" placeholder="Filter titles… (Enter for full-text content search)" value="{{ full_text_query or '' }}">
       <button type="button" id="libClear" class="btn btn-sm btn-ghost hidden">
         <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
       </button>
@@ -51,7 +57,7 @@
       <option value="words">Word count</option>
       <option value="domain">Domain</option>
     </select>
-  </div>
+  </form>
 
   <div class="filter-row" id="domainChips">
     <button type="button" class="filter-chip active" data-domain="all">

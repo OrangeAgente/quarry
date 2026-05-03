@@ -60,6 +60,27 @@ async def init_db():
             await db.execute("ALTER TABLE searches ADD COLUMN job_id TEXT")
         except Exception:
             pass
+        await db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+                doc_id UNINDEXED,
+                title,
+                domain,
+                url,
+                content,
+                tokenize='porter unicode61'
+            )
+        """)
+        async with db.execute("SELECT COUNT(*) FROM documents") as c:
+            docs_ct = (await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM documents_fts") as c:
+            fts_ct = (await c.fetchone())[0]
+        if fts_ct != docs_ct:
+            await db.execute("DELETE FROM documents_fts")
+            await db.execute("""
+                INSERT INTO documents_fts(doc_id, title, domain, url, content)
+                SELECT id, COALESCE(title, ''), domain, url, COALESCE(content_markdown, '')
+                FROM documents
+            """)
         await db.commit()
 
 
@@ -78,11 +99,54 @@ async def insert_document(doc: Document) -> bool:
                  doc.word_count, doc.links_internal, doc.links_external,
                  doc.metadata_json)
             )
+            await db.execute("DELETE FROM documents_fts WHERE doc_id = ?", (doc.id,))
+            await db.execute(
+                """INSERT INTO documents_fts(doc_id, title, domain, url, content)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (doc.id, doc.title or "", doc.domain, doc.url, doc.content_markdown or "")
+            )
             await db.commit()
             return True
         except Exception as e:
             print(f"Error inserting document: {e}")
             return False
+
+
+def _build_fts_query(text: str) -> str:
+    parts = []
+    for tok in text.split():
+        tok = tok.replace('"', '""')
+        if tok:
+            parts.append(f'"{tok}"')
+    return " ".join(parts)
+
+
+async def search_documents_fts(query: str, search_filter: Optional[str] = None) -> list[Document]:
+    fts_q = _build_fts_query(query)
+    if not fts_q:
+        return []
+    db_path = get_db_path()
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        if search_filter:
+            sql = """SELECT d.* FROM documents d
+                     JOIN documents_fts f ON f.doc_id = d.id
+                     WHERE documents_fts MATCH ? AND d.search_query = ?
+                     ORDER BY rank LIMIT 100"""
+            args = (fts_q, search_filter)
+        else:
+            sql = """SELECT d.* FROM documents d
+                     JOIN documents_fts f ON f.doc_id = d.id
+                     WHERE documents_fts MATCH ?
+                     ORDER BY rank LIMIT 100"""
+            args = (fts_q,)
+        try:
+            async with db.execute(sql, args) as cursor:
+                rows = await cursor.fetchall()
+                return [Document(**dict(row)) for row in rows]
+        except Exception as e:
+            print(f"FTS query error: {e}")
+            return []
 
 
 async def insert_extraction(ext: ExtractedData) -> bool:

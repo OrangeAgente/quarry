@@ -71,19 +71,18 @@
       </div>
 
       <article class="doc-content">
-        <div id="tab-markdown">
-          <pre id="markdownSource">{{ doc.content_markdown or 'No content available' }}</pre>
+        <div id="tab-markdown" class="md-render">
+          {% if content_html %}{{ content_html|safe }}{% else %}<p class="muted">No content available</p>{% endif %}
         </div>
         {% if doc.content_fit %}
-        <div id="tab-fit" class="hidden">
-          <pre>{{ doc.content_fit }}</pre>
-        </div>
+        <div id="tab-fit" class="md-render hidden">{{ content_fit_html|safe }}</div>
         {% endif %}
         {% if metadata %}
         <div id="tab-meta" class="hidden">
           <pre>{{ metadata }}</pre>
         </div>
         {% endif %}
+        <pre id="markdownSource" hidden>{{ doc.content_markdown or '' }}</pre>
       </article>
     </div>
 

@@ -780,6 +780,29 @@ h1.page-title em { font-style: italic; color: var(--accent); }
   margin: 16px 0;
   overflow-x: auto;
 }
+.doc-content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.doc-content h4 { font-size: 15px; margin: 18px 0 6px; font-weight: 600; }
+.doc-content h5, .doc-content h6 { font-size: 13.5px; margin: 16px 0 4px; font-weight: 600; color: var(--fg-muted); }
+.doc-content hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.doc-content table {
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13.5px;
+  display: block;
+  overflow-x: auto;
+}
+.doc-content th, .doc-content td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.doc-content th { background: var(--bg-subtle); font-weight: 600; }
+.doc-content img { max-width: 100%; height: auto; border-radius: 6px; margin: 12px 0; }
+.doc-content .muted { color: var(--fg-subtle); font-style: italic; }
 
 /* Extraction rail */
 .rail {

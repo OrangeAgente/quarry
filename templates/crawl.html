@@ -158,76 +158,80 @@
     logStream.scrollTop = logStream.scrollHeight;
   }
 
-  async function poll() {
-    if (stopped) return;
-    try {
-      const res = await fetch('/api/job/' + jobId);
-      if (!res.ok) throw new Error('status ' + res.status);
-      const s = await res.json();
+  function renderState(s) {
+    timer.textContent = `⏱ ${s.elapsed.toFixed(1)}s elapsed`;
+    document.getElementById('search-count').textContent = s.search_total;
+    document.getElementById('search-time').textContent = s.search_total > 0 ? `${s.elapsed.toFixed(2)}s initial` : '—';
+    document.getElementById('crawl-count').textContent = `${s.crawl_done}/${s.crawl_total}`;
+    document.getElementById('extract-count').textContent = s.extract ? `${s.extract_done}/${s.extract_total}` : '— off';
+    document.getElementById('extract-model').textContent = s.extract ? '{{ llm_model }}' : 'disabled';
 
-      timer.textContent = `⏱ ${s.elapsed.toFixed(1)}s elapsed`;
-      document.getElementById('search-count').textContent = s.search_total;
-      document.getElementById('search-time').textContent = s.search_total > 0 ? `${s.elapsed.toFixed(2)}s initial` : '—';
-      document.getElementById('crawl-count').textContent = `${s.crawl_done}/${s.crawl_total}`;
-      document.getElementById('extract-count').textContent = s.extract ? `${s.extract_done}/${s.extract_total}` : '— off';
-      document.getElementById('extract-model').textContent = s.extract ? '{{ llm_model }}' : 'disabled';
+    const searchProg = s.search_total > 0 ? 100 : 0;
+    const crawlProg = s.crawl_total > 0 ? Math.round(s.crawl_done / s.crawl_total * 100) : 0;
+    const extractProg = s.extract_total > 0 ? Math.round(s.extract_done / s.extract_total * 100) : 0;
+    document.getElementById('prog-search').style.width = searchProg + '%';
+    document.getElementById('prog-crawl').style.width = crawlProg + '%';
+    document.getElementById('prog-extract').style.width = extractProg + '%';
 
-      const searchProg = s.search_total > 0 ? 100 : 0;
-      const crawlProg = s.crawl_total > 0 ? Math.round(s.crawl_done / s.crawl_total * 100) : 0;
-      const extractProg = s.extract_total > 0 ? Math.round(s.extract_done / s.extract_total * 100) : 0;
-      document.getElementById('prog-search').style.width = searchProg + '%';
-      document.getElementById('prog-crawl').style.width = crawlProg + '%';
-      document.getElementById('prog-extract').style.width = extractProg + '%';
-
-      if (s.stage === 'search') {
-        setStageState('search', 'active');
-      } else if (s.stage === 'crawl') {
-        setStageState('search', 'done');
-        setStageState('crawl', 'active');
-      } else if (s.stage === 'extract') {
-        setStageState('search', 'done');
-        setStageState('crawl', 'done');
-        setStageState('extract', 'active');
-      } else if (s.stage === 'done') {
-        setStageState('search', 'done');
-        setStageState('crawl', 'done');
-        if (s.extract) setStageState('extract', 'done');
-      }
-
-      for (let i = renderedUrls; i < s.urls.length; i++) {
-        renderUrl(s.urls[i]);
-      }
-      s.urls.forEach(u => {
-        const row = urlList.querySelector(`.url-row[data-url="${CSS.escape(u.url)}"]`);
-        if (row) updateUrl(row, u);
-      });
-      renderedUrls = s.urls.length;
-
-      const inFlight = s.urls.filter(u => u.status === 'fetching').length;
-      urlMeta.textContent = `${s.crawl_done}/${s.crawl_total} crawled · ${inFlight} in flight`;
-
-      for (let i = renderedLogs; i < s.log.length; i++) {
-        renderLog(s.log[i]);
-      }
-      renderedLogs = s.log.length;
-
-      if (s.done) {
-        stopped = true;
-        jumpBtn.disabled = false;
-        jumpBtn.onclick = () => window.location.href = '/results/' + jobId;
-        if (!s.error) {
-          timer.textContent = `✓ done in ${s.elapsed.toFixed(1)}s`;
-          jumpBtn.classList.add('btn-accent');
-        }
-        return;
-      }
-    } catch (e) {
-      console.error('poll error', e);
+    if (s.stage === 'search') {
+      setStageState('search', 'active');
+    } else if (s.stage === 'crawl') {
+      setStageState('search', 'done');
+      setStageState('crawl', 'active');
+    } else if (s.stage === 'extract') {
+      setStageState('search', 'done');
+      setStageState('crawl', 'done');
+      setStageState('extract', 'active');
+    } else if (s.stage === 'done') {
+      setStageState('search', 'done');
+      setStageState('crawl', 'done');
+      if (s.extract) setStageState('extract', 'done');
     }
-    setTimeout(poll, 500);
+
+    for (let i = renderedUrls; i < s.urls.length; i++) {
+      renderUrl(s.urls[i]);
+    }
+    s.urls.forEach(u => {
+      const row = urlList.querySelector(`.url-row[data-url="${CSS.escape(u.url)}"]`);
+      if (row) updateUrl(row, u);
+    });
+    renderedUrls = s.urls.length;
+
+    const inFlight = s.urls.filter(u => u.status === 'fetching').length;
+    urlMeta.textContent = `${s.crawl_done}/${s.crawl_total} crawled · ${inFlight} in flight`;
+
+    for (let i = renderedLogs; i < s.log.length; i++) {
+      renderLog(s.log[i]);
+    }
+    renderedLogs = s.log.length;
+
+    if (s.done) {
+      stopped = true;
+      jumpBtn.disabled = false;
+      jumpBtn.onclick = () => window.location.href = '/results/' + jobId;
+      if (!s.error) {
+        timer.textContent = `✓ done in ${s.elapsed.toFixed(1)}s`;
+        jumpBtn.classList.add('btn-accent');
+      }
+      es.close();
+    }
   }
 
-  poll();
+  const es = new EventSource('/api/job/' + jobId + '/stream');
+  es.onmessage = (ev) => {
+    if (stopped) return;
+    try {
+      renderState(JSON.parse(ev.data));
+    } catch (e) {
+      console.error('render error', e);
+    }
+  };
+  es.addEventListener('error', (e) => {
+    // EventSource auto-reconnects on transient failures.
+    // If the server explicitly closed, readyState will be CLOSED.
+    if (es.readyState === EventSource.CLOSED) return;
+    console.warn('SSE transient error', e);
+  });
 })();
 </script>
 {% endblock %}
