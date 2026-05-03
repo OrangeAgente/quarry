@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set active_page = 'search' %}
+{% set active_page = 'crawl' %}
 {% block title %}Crawling — Quarry{% endblock %}
 {% block crumbs %}
   <span class="sep">/</span><span>Active research</span>
@@ -216,7 +216,8 @@
         jumpBtn.disabled = false;
         jumpBtn.onclick = () => window.location.href = '/results/' + jobId;
         if (!s.error) {
-          setTimeout(() => window.location.href = '/results/' + jobId, 1200);
+          timer.textContent = `✓ done in ${s.elapsed.toFixed(1)}s`;
+          jumpBtn.classList.add('btn-accent');
         }
         return;
       }

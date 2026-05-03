@@ -8,7 +8,14 @@
   <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px;">
     <div>
       <h1 class="page-title">Library <em>&middot;</em> <span style="font-family: var(--font-mono); font-size: 16px; color: var(--fg-subtle); letter-spacing: 0;" id="libCount">{{ documents|length }} documents</span></h1>
+      {% if search_filter %}
+      <p class="page-sub">
+        Filtered to documents from search <em>"{{ search_filter }}"</em> &middot;
+        <a href="/documents" style="color: var(--accent);">clear filter</a>
+      </p>
+      {% else %}
       <p class="page-sub">Every page the agent has crawled for you, deduplicated by URL and searchable.</p>
+      {% endif %}
     </div>
     <div style="display: flex; gap: 8px;">
       <a href="/" class="btn btn-primary">

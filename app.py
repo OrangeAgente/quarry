@@ -19,6 +19,7 @@ from storage import (
 )
 from jobs import (
     create_job, get_job, job_state, run_job_in_background,
+    get_sidebar_jobs, get_in_memory_job_ids,
 )
 from models import SearchRecord
 
@@ -35,17 +36,21 @@ def inject_globals():
         llm_provider = settings.llm_provider
         llm_model = llm_provider.split("/")[-1] if "/" in llm_provider else llm_provider
         llm_vendor = llm_provider.split("/")[0] if "/" in llm_provider else llm_provider
+        sidebar = get_sidebar_jobs()
         return dict(
             doc_count=doc_ct,
             search_count=search_ct,
             extraction_count=extract_ct,
             llm_vendor=llm_vendor.title(),
             llm_model=llm_model,
+            live_job=sidebar["live"],
+            previous_jobs=sidebar["previous"],
         )
     except Exception:
         return dict(
             doc_count=0, search_count=0, extraction_count=0,
             llm_vendor="Cohere", llm_model="command-r-plus",
+            live_job=None, previous_jobs=[],
         )
 
 
@@ -141,6 +146,7 @@ def results_view(job_id):
         extract_prompt=job.extract_prompt,
         documents=documents,
         ext_ids=ext_ids,
+        active_page="results",
         job_meta={
             "elapsed": elapsed_s,
             "extract_done": job.extract_done,
@@ -223,12 +229,21 @@ def history():
         day = s["executed_at"][:10]
         groups.setdefault(day, []).append(s)
     grouped = [(day, items) for day, items in groups.items()]
-    return render_template("history.html", grouped=grouped, total=len(searches))
+    return render_template(
+        "history.html",
+        grouped=grouped,
+        total=len(searches),
+        live_job_ids=get_in_memory_job_ids(),
+    )
 
 
 @app.route("/documents")
 def documents_list():
-    documents = run_async(get_all_documents())
+    search_filter = request.args.get("search", "").strip()
+    if search_filter:
+        documents = run_async(get_documents_by_search(search_filter))
+    else:
+        documents = run_async(get_all_documents())
     ext_ids = run_async(get_doc_ids_with_extractions())
     domain_counts = {}
     for d in documents:
@@ -239,6 +254,7 @@ def documents_list():
         documents=documents,
         ext_ids=ext_ids,
         domain_counts=domain_counts,
+        search_filter=search_filter,
     )
 
 

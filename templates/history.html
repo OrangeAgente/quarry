@@ -26,7 +26,13 @@
           </div>
         </div>
         <div style="display: flex; gap: 6px;">
-          <a href="/documents?q={{ s.query|urlencode }}" class="btn btn-sm">View</a>
+          {% if s.job_id and s.job_id in live_job_ids %}
+          <a href="/crawl/{{ s.job_id }}" class="btn btn-sm" title="Open the live crawl trace for this search">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.96 0L9.24 2.18a.5.5 0 0 0-.96 0l-2.35 8.36A2 2 0 0 1 4 12H2"/></svg>
+            Live crawl
+          </a>
+          {% endif %}
+          <a href="/documents?search={{ s.query|urlencode }}" class="btn btn-sm">View</a>
           <form method="POST" action="/search" style="display:inline">
             <input type="hidden" name="query" value="{{ s.query }}">
             <input type="hidden" name="max_results" value="{{ s.result_count or 5 }}">

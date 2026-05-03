@@ -38,3 +38,4 @@ class SearchRecord(BaseModel):
     query: str
     executed_at: str
     result_count: int
+    job_id: Optional[str] = None

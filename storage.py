@@ -52,9 +52,14 @@ async def init_db():
                 id TEXT PRIMARY KEY,
                 query TEXT NOT NULL,
                 executed_at TEXT NOT NULL,
-                result_count INTEGER DEFAULT 0
+                result_count INTEGER DEFAULT 0,
+                job_id TEXT
             )
         """)
+        try:
+            await db.execute("ALTER TABLE searches ADD COLUMN job_id TEXT")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -103,9 +108,9 @@ async def insert_search(record: SearchRecord) -> bool:
     async with aiosqlite.connect(db_path) as db:
         try:
             await db.execute(
-                """INSERT INTO searches (id, query, executed_at, result_count)
-                   VALUES (?, ?, ?, ?)""",
-                (record.id, record.query, record.executed_at, record.result_count)
+                """INSERT INTO searches (id, query, executed_at, result_count, job_id)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (record.id, record.query, record.executed_at, record.result_count, record.job_id)
             )
             await db.commit()
             return True
@@ -212,7 +217,7 @@ async def get_search_history_enriched() -> list[dict]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            """SELECT s.id, s.query, s.executed_at, s.result_count,
+            """SELECT s.id, s.query, s.executed_at, s.result_count, s.job_id,
                       (SELECT COUNT(DISTINCT d.id)
                        FROM documents d
                        JOIN extractions e ON e.document_id = d.id

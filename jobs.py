@@ -50,6 +50,8 @@ class Job:
 
 _store: dict[str, Job] = {}
 _lock = threading.Lock()
+_recent_job_ids: list[str] = []
+_RECENT_LIMIT = 10
 
 
 def create_job(query: str, max_results: int, extract: bool, extract_prompt: str) -> str:
@@ -63,7 +65,36 @@ def create_job(query: str, max_results: int, extract: bool, extract_prompt: str)
     )
     with _lock:
         _store[job.id] = job
+        _recent_job_ids.insert(0, job.id)
+        del _recent_job_ids[_RECENT_LIMIT:]
     return job.id
+
+
+def get_sidebar_jobs() -> dict:
+    with _lock:
+        live = None
+        previous = []
+        for i, jid in enumerate(_recent_job_ids):
+            j = _store.get(jid)
+            if not j:
+                continue
+            entry = {
+                "id": j.id,
+                "query": j.query,
+                "done": j.done,
+                "running": not j.done,
+                "has_documents": bool(j.document_ids),
+            }
+            if i == 0:
+                live = entry
+            else:
+                previous.append(entry)
+        return {"live": live, "previous": previous}
+
+
+def get_in_memory_job_ids() -> set[str]:
+    with _lock:
+        return set(_store.keys())
 
 
 def get_job(job_id: str) -> Optional[Job]:
@@ -203,6 +234,7 @@ async def _run_job(job_id: str) -> None:
             query=job.query,
             executed_at=datetime.now(timezone.utc).isoformat(),
             result_count=len(documents),
+            job_id=job_id,
         )
         await insert_search(search_record)
 

@@ -29,6 +29,29 @@
         </a>
       </div>
 
+      {% if live_job %}
+      <div class="nav-group">
+        <div class="nav-group-label">Active</div>
+        <a href="/crawl/{{ live_job.id }}" class="nav-item {{ 'active' if active_page == 'crawl' }}" title="{{ live_job.query }}">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.96 0L9.24 2.18a.5.5 0 0 0-.96 0l-2.35 8.36A2 2 0 0 1 4 12H2"/></svg>
+          <span>Live crawl</span>
+          {% if live_job.running %}<span class="live-dot" style="margin-left:auto"></span>{% endif %}
+        </a>
+      </div>
+      {% endif %}
+
+      {% if previous_jobs %}
+      <div class="nav-group">
+        <div class="nav-group-label">Previous live crawls</div>
+        {% for j in previous_jobs %}
+        <a href="/crawl/{{ j.id }}" class="nav-item" title="{{ j.query }}">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ j.query }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <div class="nav-group">
         <div class="nav-group-label">Collection</div>
         <a href="/documents" class="nav-item {{ 'active' if active_page == 'library' }}">
