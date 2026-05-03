@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% set active_page = 'library' %}
+{% block title %}{{ doc.title or doc.domain }} — Quarry{% endblock %}
+{% block crumbs %}
+  <span class="sep">/</span><span>Library</span>
+  <span class="sep">/</span><span class="cur">Document</span>
+{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div class="doc-layout">
+    <!-- Left: document content -->
+    <div>
+      <header class="doc-header">
+        <div class="doc-crumb">
+          <a href="/documents" class="btn btn-sm btn-ghost">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8H3M7 4 3 8l4 4"/></svg>
+            back
+          </a>
+          <span style="opacity: 0.3">/</span>
+          <span>{{ doc.domain }}</span>
+        </div>
+        <h1 class="doc-title">{{ doc.title or doc.domain }}</h1>
+        <div class="doc-meta">
+          <a href="{{ doc.url }}" target="_blank" class="tag">
+            <svg class="ico" style="width:10px;height:10px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5l-6 6"/></svg>
+            {{ doc.url[:60] }}{% if doc.url|length > 60 %}...{% endif %}
+          </a>
+          <span class="tag">{{ doc.word_count }} words</span>
+          <span class="tag">{{ reading_min }} min read</span>
+          <span class="tag">{{ doc.links_internal }} int / {{ doc.links_external }} ext links</span>
+          <span class="tag">crawled {{ doc.crawled_at[:16] }}</span>
+          <span class="tag">query: "{{ doc.search_query }}"</span>
+          {% if extractions %}
+          <span class="tag tag-accent">
+            <svg class="ico" style="width:10px;height:10px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M3.2 3.2l2.1 2.1M10.7 10.7l2.1 2.1M3.2 12.8l2.1-2.1M10.7 5.3l2.1-2.1"/></svg>
+            extracted
+          </span>
+          {% endif %}
+        </div>
+      </header>
+
+      <!-- Content tabs -->
+      <div class="doc-tabs">
+        <button class="doc-tab active" onclick="showDocTab('markdown', this)">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 1.5h6l3 3v10h-9v-13ZM9.5 1.5v3h3"/></svg>
+          Clean markdown
+        </button>
+        {% if doc.content_fit %}
+        <button class="doc-tab" onclick="showDocTab('fit', this)">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1v2.5M4 7V4.5M1 4h2.5M7 4H4.5M10 7v2M10 13v-2M8 10h2M12 10h-2"/></svg>
+          Fit-markdown
+        </button>
+        {% endif %}
+        {% if metadata %}
+        <button class="doc-tab" onclick="showDocTab('meta', this)">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 14 8l-6 6-6-6V2h6ZM5.5 5.5h.01"/></svg>
+          Metadata
+        </button>
+        {% endif %}
+        <div style="margin-left: auto; display: flex; gap: 6px; align-items: center; padding-bottom: 6px;">
+          <button type="button" class="btn btn-sm" onclick="copyMarkdown()">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5V2.5h8.5V11H11M3 5h8v9.5H3V5Z"/></svg>
+            <span id="copyLabel">Copy</span>
+          </button>
+          <a href="{{ doc.url }}" target="_blank" class="btn btn-sm">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5v9h9V10M9 3.5h3.5V7M12.5 3.5l-6 6"/></svg>
+            Open source
+          </a>
+        </div>
+      </div>
+
+      <article class="doc-content">
+        <div id="tab-markdown">
+          <pre id="markdownSource">{{ doc.content_markdown or 'No content available' }}</pre>
+        </div>
+        {% if doc.content_fit %}
+        <div id="tab-fit" class="hidden">
+          <pre>{{ doc.content_fit }}</pre>
+        </div>
+        {% endif %}
+        {% if metadata %}
+        <div id="tab-meta" class="hidden">
+          <pre>{{ metadata }}</pre>
+        </div>
+        {% endif %}
+      </article>
+    </div>
+
+    <!-- Right: extraction rail -->
+    <aside class="rail">
+      {% for item in parsed_extractions %}
+      {% set ext = item.ext %}
+      {% set data = item.data %}
+      <div class="rail-card">
+        <div class="rail-card-head">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M3.2 3.2l2.1 2.1M10.7 10.7l2.1 2.1M3.2 12.8l2.1-2.1M10.7 5.3l2.1-2.1"/></svg>
+          Extraction
+          <span class="spacer"></span>
+          <span class="model">{{ ext.model }}</span>
+        </div>
+        <div class="rail-card-body">
+          {% if data and data.summary %}
+            <div class="summary-quote">{{ data.summary }}</div>
+          {% endif %}
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            {% if data and data.key_facts %}
+            <div>
+              <div class="kv-key" style="margin-bottom: 8px;">Key facts</div>
+              <div class="fact-list">
+                {% for f in data.key_facts %}
+                <div class="fact">
+                  <span class="bullet">{{ '%02d'|format(loop.index) }}</span>
+                  <span>{% if f is mapping %}{{ f.text or f.fact or f|tojson }}{% else %}{{ f }}{% endif %}</span>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if data and data.topics %}
+            <div>
+              <div class="kv-key" style="margin-bottom: 6px;">Topics</div>
+              <div class="chips">
+                {% for t in data.topics %}
+                <span class="chip chip-accent">{{ t if t is string else t|tojson }}</span>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if data and data.entities %}
+            <div class="kv">
+              {% if data.entities.people %}
+              <div class="kv-row">
+                <span class="kv-key">People</span>
+                <span class="kv-val">{{ data.entities.people|join(' · ') }}</span>
+              </div>
+              {% endif %}
+              {% if data.entities.organizations %}
+              <div class="kv-row">
+                <span class="kv-key">Organizations</span>
+                <span class="kv-val">{{ data.entities.organizations|join(' · ') }}</span>
+              </div>
+              {% elif data.entities.orgs %}
+              <div class="kv-row">
+                <span class="kv-key">Organizations</span>
+                <span class="kv-val">{{ data.entities.orgs|join(' · ') }}</span>
+              </div>
+              {% endif %}
+              {% if data.entities.locations %}
+              <div class="kv-row">
+                <span class="kv-key">Locations</span>
+                <span class="kv-val">{{ data.entities.locations|join(' · ') }}</span>
+              </div>
+              {% endif %}
+              {% if data.entities.dates %}
+              <div class="kv-row">
+                <span class="kv-key">Dates</span>
+                <span class="kv-val mono">{{ data.entities.dates|join(' · ') }}</span>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            {% if data and data.sentiment %}
+            <div class="kv">
+              <div class="kv-row">
+                <span class="kv-key">Sentiment</span>
+                {% set s = data.sentiment if data.sentiment is string else (data.sentiment.overall or data.sentiment|tojson) %}
+                {% set s_low = s|lower %}
+                <span class="kv-val" style="color: {% if 'positive' in s_low %}var(--success){% elif 'negative' in s_low %}var(--danger){% else %}var(--fg){% endif %};">● {{ s }}</span>
+              </div>
+            </div>
+            {% endif %}
+
+            {% if not data or (not data.summary and not data.key_facts and not data.topics and not data.entities and not data.sentiment) %}
+            <pre style="font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; background: var(--bg-inset); padding: 10px; border-radius: 8px; margin: 0;">{{ ext.data_json }}</pre>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- Re-extract card -->
+      <div class="rail-card">
+        <div class="rail-card-head">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2c-1.7 0-3 1.3-3 3 0 .5.1 1 .3 1.4C4.5 7 4 7.9 4 9s.5 2 1.3 2.6c-.2.4-.3.9-.3 1.4 0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2 0-.5-.1-1-.3-1.4.8-.6 1.3-1.5 1.3-2.6s-.5-2-1.3-2.6c.2-.4.3-.9.3-1.4 0-1.7-1.3-3-3-3Z"/></svg>
+          {% if extractions %}Re-extract with custom prompt{% else %}Extract with AI{% endif %}
+        </div>
+        <div class="rail-card-body">
+          <form method="POST" action="/extract/{{ doc.id }}" class="prompt-editor">
+            <textarea name="prompt" id="promptBox" placeholder="e.g. Pull out all experimental parameters, hardware specifications, and numerical claims..."></textarea>
+            <div class="row">
+              <span class="prompt-tokens" id="tokenCount">~0 tokens</span>
+              <span class="grow"></span>
+              <button type="submit" class="btn btn-sm btn-accent">
+                <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v10l8-5-8-5Z"/></svg>
+                Run extraction
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {% if related %}
+      <div class="rail-card">
+        <div class="rail-card-head">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10.5 3.5 13a2.5 2.5 0 0 1-3.5-3.5L2.5 7M10 5.5 12.5 3a2.5 2.5 0 0 1 3.5 3.5L13.5 9M5 11l6-6"/></svg>
+          Related in library
+        </div>
+        <div class="rail-card-body" style="padding: 0;">
+          {% for r in related %}
+          <a href="/document/{{ r.id }}" style="padding: 10px 14px; border-bottom: {% if not loop.last %}1px solid var(--border){% else %}none{% endif %}; display: flex; gap: 10px; text-decoration: none; color: inherit;">
+            <span class="favicon" style="width: 22px; height: 22px; border-radius: 5px; background: var(--bg-inset); color: var(--fg-muted); font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0;">{{ r.domain[:1]|upper }}</span>
+            <div style="min-width: 0;">
+              <div style="font-size: 12.5px; font-weight: 500; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.title or r.domain }}</div>
+              <div style="font-size: 10.5px; color: var(--fg-subtle); font-family: var(--font-mono); margin-top: 2px;">{{ r.domain }} · {{ r.word_count }}w</div>
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+
+<script>
+function showDocTab(tabId, btn) {
+  document.querySelectorAll('.doc-content > div').forEach(d => d.classList.add('hidden'));
+  document.querySelectorAll('.doc-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.remove('hidden');
+  btn.classList.add('active');
+}
+
+function copyMarkdown() {
+  const src = document.getElementById('markdownSource');
+  if (!src) return;
+  navigator.clipboard.writeText(src.textContent).then(() => {
+    const label = document.getElementById('copyLabel');
+    const orig = label.textContent;
+    label.textContent = 'Copied';
+    setTimeout(() => { label.textContent = orig; }, 1200);
+  });
+}
+
+(function() {
+  const box = document.getElementById('promptBox');
+  const count = document.getElementById('tokenCount');
+  if (!box || !count) return;
+  box.addEventListener('input', () => {
+    count.textContent = '~' + Math.floor(box.value.length / 4) + ' tokens';
+  });
+})();
+</script>
+{% endblock %}

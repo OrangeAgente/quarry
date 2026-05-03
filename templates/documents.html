@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% set active_page = 'library' %}
+{% block title %}Library — Quarry{% endblock %}
+{% block crumbs %}<span class="sep">/</span><span class="cur">Library</span>{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+  <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px;">
+    <div>
+      <h1 class="page-title">Library <em>&middot;</em> <span style="font-family: var(--font-mono); font-size: 16px; color: var(--fg-subtle); letter-spacing: 0;" id="libCount">{{ documents|length }} documents</span></h1>
+      <p class="page-sub">Every page the agent has crawled for you, deduplicated by URL and searchable.</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="/" class="btn btn-primary">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg>
+        New search
+      </a>
+    </div>
+  </div>
+
+  {% if documents %}
+  <div class="library-toolbar">
+    <div class="lib-search">
+      <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM11 11l3.5 3.5"/></svg>
+      <input id="libSearch" placeholder="Search titles, domains, content…">
+      <button type="button" id="libClear" class="btn btn-sm btn-ghost hidden">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+      </button>
+    </div>
+    <select id="libAge" class="select">
+      <option value="all">Any date</option>
+      <option value="day">Last 24 hours</option>
+      <option value="week">Last 7 days</option>
+      <option value="month">Last 30 days</option>
+    </select>
+    <select id="libWords" class="select">
+      <option value="all">Any length</option>
+      <option value="short">Short (&lt;3k words)</option>
+      <option value="medium">Medium (3k–5k)</option>
+      <option value="long">Long (&gt;5k words)</option>
+    </select>
+    <select id="libSort" class="select">
+      <option value="recent">Most recent</option>
+      <option value="words">Word count</option>
+      <option value="domain">Domain</option>
+    </select>
+  </div>
+
+  <div class="filter-row" id="domainChips">
+    <button type="button" class="filter-chip active" data-domain="all">
+      All domains <span class="count">{{ documents|length }}</span>
+    </button>
+    {% for domain, count in domain_counts.items() %}
+    <button type="button" class="filter-chip" data-domain="{{ domain }}">
+      {{ domain }} <span class="count">{{ count }}</span>
+    </button>
+    {% endfor %}
+  </div>
+
+  <div class="lib-grid" id="libGrid">
+    {% for doc in documents %}
+    <a href="/document/{{ doc.id }}" class="doc-card"
+       data-title="{{ (doc.title or doc.domain)|lower }}"
+       data-domain="{{ doc.domain }}"
+       data-snippet="{{ (doc.content_markdown[:400] if doc.content_markdown else '')|lower }}"
+       data-words="{{ doc.word_count or 0 }}"
+       data-crawled="{{ doc.crawled_at }}">
+      <div class="doc-card-head">
+        <span class="favicon" style="background: var(--bg-inset); color: var(--fg-muted);">{{ doc.domain[:1]|upper }}</span>
+        <span class="domain">{{ doc.domain }}</span>
+        {% if doc.id in ext_ids %}
+        <span class="has-ext">✦ extracted</span>
+        {% endif %}
+      </div>
+      <div class="doc-card-title">{{ doc.title or doc.domain }}</div>
+      <div class="doc-card-snippet">{{ doc.content_markdown[:150] if doc.content_markdown else 'No content' }}</div>
+      <div class="doc-card-foot">
+        <span>{{ doc.crawled_at[:10] }}</span>
+        <span class="sep">&middot;</span>
+        <span>{{ doc.word_count }}w</span>
+        <span class="sep">&middot;</span>
+        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ doc.search_query }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div id="libEmpty" class="empty-state hidden">
+    <div class="title">Nothing matches.</div>
+    <div>Try loosening a filter or clearing the search.</div>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="title">No documents yet.</div>
+    <div>Run a search to start building your library. <a href="/" style="color: var(--accent);">Search now</a></div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  const grid = document.getElementById('libGrid');
+  if (!grid) return;
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialQ = urlParams.get('q');
+  const cards = Array.from(grid.querySelectorAll('.doc-card'));
+  const search = document.getElementById('libSearch');
+  const clear = document.getElementById('libClear');
+  const ageSel = document.getElementById('libAge');
+  const wordsSel = document.getElementById('libWords');
+  const sortSel = document.getElementById('libSort');
+  const chips = document.querySelectorAll('#domainChips .filter-chip');
+  const empty = document.getElementById('libEmpty');
+  const count = document.getElementById('libCount');
+  let activeDomain = 'all';
+
+  const parse = (s) => { const t = Date.parse(s); return isNaN(t) ? 0 : t; };
+  const now = Date.now();
+  const ageWindow = { day: 864e5, week: 7*864e5, month: 30*864e5 };
+
+  function apply() {
+    const q = (search.value || '').toLowerCase().trim();
+    const age = ageSel.value;
+    const wr = wordsSel.value;
+    clear.classList.toggle('hidden', !q);
+
+    let visible = 0;
+    const shown = [];
+    cards.forEach(c => {
+      const title = c.dataset.title || '';
+      const domain = c.dataset.domain || '';
+      const snippet = c.dataset.snippet || '';
+      const words = +c.dataset.words || 0;
+      const crawled = parse(c.dataset.crawled);
+      let show = true;
+      if (q && !(title.includes(q) || domain.includes(q) || snippet.includes(q))) show = false;
+      if (activeDomain !== 'all' && domain !== activeDomain) show = false;
+      if (age !== 'all' && now - crawled > ageWindow[age]) show = false;
+      if (wr === 'short' && words > 3000) show = false;
+      if (wr === 'medium' && (words < 3000 || words > 5000)) show = false;
+      if (wr === 'long' && words < 5000) show = false;
+      c.classList.toggle('hidden', !show);
+      if (show) { visible++; shown.push(c); }
+    });
+
+    const sortBy = sortSel.value;
+    const sorters = {
+      recent: (a, b) => parse(b.dataset.crawled) - parse(a.dataset.crawled),
+      words: (a, b) => (+b.dataset.words) - (+a.dataset.words),
+      domain: (a, b) => a.dataset.domain.localeCompare(b.dataset.domain),
+    };
+    shown.sort(sorters[sortBy]);
+    shown.forEach(c => grid.appendChild(c));
+
+    count.textContent = visible + ' of {{ documents|length }}';
+    empty.classList.toggle('hidden', visible !== 0);
+  }
+
+  if (initialQ) search.value = initialQ;
+  search.addEventListener('input', apply);
+  clear.addEventListener('click', () => { search.value = ''; apply(); });
+  ageSel.addEventListener('change', apply);
+  wordsSel.addEventListener('change', apply);
+  sortSel.addEventListener('change', apply);
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      activeDomain = chip.dataset.domain;
+      chips.forEach(c => c.classList.toggle('active', c === chip));
+      apply();
+    });
+  });
+
+  apply();
+})();
+</script>
+{% endblock %}

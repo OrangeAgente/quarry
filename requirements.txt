@@ -1,0 +1,8 @@
+crawl4ai>=0.8.6
+ddgs>=9.0
+flask>=3.0
+pydantic>=2.5
+pydantic-settings>=2.0
+aiosqlite>=0.20
+python-dotenv>=1.0
+rich>=13.0

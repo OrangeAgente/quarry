@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% set active_page = 'search' %}
+{% block title %}Quarry — Search{% endblock %}
+{% block crumbs %}<span class="sep">/</span><span class="cur">Search</span>{% endblock %}
+
+{% block content %}
+<div class="page">
+  <section class="hero">
+    <div class="hero-eyebrow">
+      <span class="dot"></span>
+      <span>Agent online</span>
+    </div>
+    <h1>Research the open web, <em>end&nbsp;to&nbsp;end</em>.</h1>
+    <p class="lede">
+      Quarry searches, crawls, and distills the web on your behalf — turning any question into a
+      library of clean markdown, structured extractions, and a trail you can revisit.
+    </p>
+
+    <form method="POST" action="/search">
+      <div class="search-card">
+        <div class="search-input-row">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM11 11l3.5 3.5"/></svg>
+          <input class="search-input" name="query" placeholder="Ask anything — the agent will search, crawl, and distill..."
+                 value="{{ query or '' }}" autofocus>
+          <span class="kbd">Enter</span>
+        </div>
+
+        <div class="search-divider"></div>
+
+        <div class="search-options">
+          <span class="opt-num">
+            <label>Results</label>
+            <input type="number" name="max_results" value="{{ max_results or 5 }}" min="1" max="20">
+          </span>
+          <button type="button" id="extractChip" class="opt-chip {{ 'active' if extract }}">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M3.2 3.2l2.1 2.1M10.7 10.7l2.1 2.1M3.2 12.8l2.1-2.1M10.7 5.3l2.1-2.1"/></svg>
+            LLM extraction
+          </button>
+          <input type="hidden" name="extract" id="extractInput" value="{{ 'on' if extract else '' }}">
+          <div class="search-submit-row">
+            <button type="submit" class="btn btn-accent">
+              Run agent
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="extractPanel" class="extract-panel {{ '' if extract else 'hidden' }}">
+          <label>
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2c-1.7 0-3 1.3-3 3 0 .5.1 1 .3 1.4C4.5 7 4 7.9 4 9s.5 2 1.3 2.6c-.2.4-.3.9-.3 1.4 0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2 0-.5-.1-1-.3-1.4.8-.6 1.3-1.5 1.3-2.6s-.5-2-1.3-2.6c.2-.4.3-.9.3-1.4 0-1.7-1.3-3-3-3Z"/></svg>
+            Extraction prompt
+            <span style="color: var(--fg-subtle); font-weight: 400; text-transform: none; letter-spacing: 0;">— optional, applies to each crawled doc</span>
+          </label>
+          <textarea name="extract_prompt" placeholder="Extract summary, key facts, entities, topics, sentiment... (leave blank for default schema)"
+                    rows="2">{{ extract_prompt or '' }}</textarea>
+          <div class="prompt-presets">
+            <button type="button" onclick="this.closest('.extract-panel').querySelector('textarea').value=this.textContent">Extract summary, key facts, entities, topics</button>
+            <button type="button" onclick="this.closest('.extract-panel').querySelector('textarea').value=this.textContent">Pull pricing, features, and comparison tables</button>
+            <button type="button" onclick="this.closest('.extract-panel').querySelector('textarea').value=this.textContent">Find dates, people, and cited sources</button>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <div class="suggestions">
+      <div class="suggestions-label">Try a query</div>
+      <div class="suggestion-grid">
+        <button class="suggestion" onclick="document.querySelector('.search-input').value='What is new in retrieval augmented generation this month?'; document.querySelector('.search-input').focus();">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11.5 6 7l2.5 2.5L14 4M10 4h4v4"/></svg>
+          <span class="suggestion-text">What's new in <em>retrieval augmented generation</em> this month?</span>
+        </button>
+        <button class="suggestion" onclick="document.querySelector('.search-input').value='Compare Mamba vs Transformer architectures'; document.querySelector('.search-input').focus();">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2.5h5a2 2 0 0 1 2 2v9a1.5 1.5 0 0 0-1.5-1.5H2v-9.5ZM14 2.5H9a2 2 0 0 0-2 2v9a1.5 1.5 0 0 1 1.5-1.5H14v-9.5Z"/></svg>
+          <span class="suggestion-text">Compare <em>Mamba vs Transformer</em> architectures</span>
+        </button>
+        <button class="suggestion" onclick="document.querySelector('.search-input').value='Regulatory changes to EU AI Act in 2026'; document.querySelector('.search-input').focus();">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 14.5a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13ZM1.5 8h13M8 1.5c1.8 2 2.7 4 2.7 6.5s-.9 4.5-2.7 6.5M8 1.5c-1.8 2-2.7 4-2.7 6.5S6.2 12.5 8 14.5"/></svg>
+          <span class="suggestion-text">Regulatory changes to <em>EU AI Act</em> in 2026</span>
+        </button>
+        <button class="suggestion" onclick="document.querySelector('.search-input').value='Latest nuclear fusion breakthroughs at tokamak reactors'; document.querySelector('.search-input').focus();">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13.5V2.5M14 13.5H2M5 10V7M8 10V4.5M11 10v-3"/></svg>
+          <span class="suggestion-text">Latest <em>nuclear fusion</em> breakthroughs at tokamak reactors</span>
+        </button>
+      </div>
+    </div>
+
+    {% if stats %}
+    <div class="stats-strip">
+      <div>
+        <div class="stat-label">Documents</div>
+        <div class="stat-val">{{ stats.docs }}</div>
+      </div>
+      <div>
+        <div class="stat-label">Searches</div>
+        <div class="stat-val">{{ stats.searches }}</div>
+      </div>
+      <div>
+        <div class="stat-label">Extractions</div>
+        <div class="stat-val">{{ stats.extractions }}</div>
+      </div>
+      <div>
+        <div class="stat-label">Domains</div>
+        <div class="stat-val">{{ stats.domains }}</div>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if documents %}
+  <div style="max-width: 780px; margin: 40px auto 0;">
+    <div class="results-head">
+      <div>
+        <h1>Results for <em>"{{ query }}"</em></h1>
+        <p class="meta">
+          {% if job_meta %}
+            {{ documents|length }} of {{ job_meta.crawl_total }} pages crawled · {{ "{:,}".format(job_meta.total_words) }} total words{% if job_meta.extract_done %} · {{ job_meta.extract_done }} extractions complete{% endif %} · {{ job_meta.elapsed }}s agent runtime
+          {% else %}
+            {{ documents|length }} page(s) crawled and stored
+          {% endif %}
+        </p>
+      </div>
+      <div class="results-toolbar">
+        <form method="POST" action="/search" style="display:inline">
+          <input type="hidden" name="query" value="{{ query }}">
+          <input type="hidden" name="max_results" value="{{ max_results or 5 }}">
+          {% if extract %}<input type="hidden" name="extract" value="on">{% endif %}
+          {% if extract_prompt %}<input type="hidden" name="extract_prompt" value="{{ extract_prompt }}">{% endif %}
+          <button type="submit" class="btn btn-primary">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4h-4M2 13V9h4M13.5 9a6 6 0 0 1-10.5 3M2.5 7a6 6 0 0 1 10.5-3"/></svg>
+            Re-run
+          </button>
+        </form>
+      </div>
+    </div>
+    <div class="result-list">
+      {% for doc in documents %}
+      <div class="result-card">
+        <div class="result-main">
+          <div class="result-num">{{ '%02d' % loop.index }}</div>
+          <div class="result-body">
+            <a href="/document/{{ doc.id }}" class="result-title">{{ doc.title or doc.domain }}</a>
+            <div class="result-url">
+              <span>{{ doc.domain }}</span>
+            </div>
+            <p class="result-snippet">{{ doc.content_markdown[:300] if doc.content_markdown else 'No content' }}</p>
+            <div class="result-meta-row">
+              <span class="tag"><span class="dot"></span>{{ doc.word_count }} words</span>
+              <span class="tag">{{ doc.links_internal }} int / {{ doc.links_external }} ext</span>
+              {% if ext_ids and doc.id in ext_ids %}
+              <span class="tag tag-accent">
+                <svg class="ico" style="width:10px;height:10px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M3.2 3.2l2.1 2.1M10.7 10.7l2.1 2.1M3.2 12.8l2.1-2.1M10.7 5.3l2.1-2.1"/></svg>
+                extracted
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="result-actions">
+            <a href="/document/{{ doc.id }}" class="btn btn-sm">Open</a>
+            <form method="POST" action="/extract/{{ doc.id }}" style="display:inline">
+              <button type="submit" class="btn btn-sm btn-accent">Extract</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

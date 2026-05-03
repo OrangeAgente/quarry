@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Quarry — research the web with an agent{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <a href="/" class="brand">
+        <div class="brand-mark">Q</div>
+        <div>
+          <div class="brand-name">Quarry</div>
+          <div class="brand-tag">research.agent</div>
+        </div>
+      </a>
+
+      <div class="nav-group">
+        <div class="nav-group-label">Workspace</div>
+        <a href="/" class="nav-item {{ 'active' if active_page == 'search' }}">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM11 11l3.5 3.5"/></svg>
+          <span>Search</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-label">Collection</div>
+        <a href="/documents" class="nav-item {{ 'active' if active_page == 'library' }}">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2.5h5a2 2 0 0 1 2 2v9a1.5 1.5 0 0 0-1.5-1.5H2v-9.5ZM14 2.5H9a2 2 0 0 0-2 2v9a1.5 1.5 0 0 1 1.5-1.5H14v-9.5Z"/></svg>
+          <span>Library</span>
+          {% if doc_count is defined %}<span class="nav-badge">{{ doc_count }}</span>{% endif %}
+        </a>
+        <a href="/history" class="nav-item {{ 'active' if active_page == 'history' }}">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 14.5a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13ZM8 4.5V8l2.5 2"/></svg>
+          <span>History</span>
+          {% if search_count is defined %}<span class="nav-badge">{{ search_count }}</span>{% endif %}
+        </a>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="credits-card">
+          <div class="credits-row">
+            <span>LLM Provider</span>
+            <span class="credits-val">{{ llm_vendor }}</span>
+          </div>
+          <div class="credits-row">
+            <span>{{ llm_model }}</span>
+          </div>
+          <div style="margin-top: 4px; border-top: 1px solid var(--border); padding-top: 6px;">
+            <div class="credits-row">
+              <span>Extractions run</span>
+              <span class="credits-val">{{ extraction_count }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <!-- Topbar -->
+      <div class="topbar">
+        <div class="crumbs">
+          <span>Quarry</span>
+          {% block crumbs %}{% endblock %}
+        </div>
+        <div class="topbar-spacer"></div>
+        <div class="avatar">U</div>
+      </div>
+
+      <!-- Page content -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div style="padding: 16px 32px 0;">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loadingOverlay" class="hidden" style="position:fixed;inset:0;background:color-mix(in oklch, var(--bg) 80%, transparent);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;">
+    <div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px;">
+      <div class="spinner"></div>
+      <div id="loadingText" style="font-size:15px;color:var(--fg);font-family:var(--font-serif);font-style:italic;">Searching the web...</div>
+      <div id="loadingSubtext" style="font-size:12px;color:var(--fg-subtle);font-family:var(--font-mono);">This may take a moment while the agent crawls pages</div>
+    </div>
+  </div>
+
+  <!-- Tweaks toggle + panel -->
+  <button class="tweaks-toggle" id="tweaksToggle" aria-label="Open tweaks">
+    <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM13.5 8c0-.5 0-1-.1-1.4l1.4-1.1L13.5 3l-1.7.7c-.7-.5-1.4-.9-2.2-1L9.5 1h-3l-.1 1.7c-.8.1-1.5.5-2.2 1L2.5 3 1.2 5.5l1.4 1.1c-.1.4-.1.9-.1 1.4s0 1 .1 1.4L1.2 10.5 2.5 13l1.7-.7c.7.5 1.4.9 2.2 1L6.5 15h3l.1-1.7c.8-.1 1.5-.5 2.2-1l1.7.7 1.3-2.5-1.4-1.1c.1-.4.1-.9.1-1.4Z"/></svg>
+  </button>
+  <div class="tweaks-panel hidden" id="tweaksPanel">
+    <div class="tweaks-head">
+      <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM13.5 8c0-.5 0-1-.1-1.4l1.4-1.1L13.5 3l-1.7.7c-.7-.5-1.4-.9-2.2-1L9.5 1h-3l-.1 1.7c-.8.1-1.5.5-2.2 1L2.5 3 1.2 5.5l1.4 1.1c-.1.4-.1.9-.1 1.4s0 1 .1 1.4L1.2 10.5 2.5 13l1.7-.7c.7.5 1.4.9 2.2 1L6.5 15h3l.1-1.7c.8-.1 1.5-.5 2.2-1l1.7.7 1.3-2.5-1.4-1.1c.1-.4.1-.9.1-1.4Z"/></svg>
+      <span>Tweaks</span>
+      <button class="close" id="tweaksClose">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+      </button>
+    </div>
+    <div class="tweak-row">
+      <div class="tweak-label">Theme</div>
+      <div class="tweak-options" data-tweak="theme">
+        <button class="tweak-opt active" data-value="light">light</button>
+        <button class="tweak-opt" data-value="dark">dark</button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <div class="tweak-label">Accent</div>
+      <div class="swatches" data-tweak="accent">
+        <button class="swatch active" data-value="amber" style="background: oklch(0.72 0.14 65)"></button>
+        <button class="swatch" data-value="indigo" style="background: oklch(0.55 0.18 265)"></button>
+        <button class="swatch" data-value="emerald" style="background: oklch(0.62 0.14 160)"></button>
+        <button class="swatch" data-value="rose" style="background: oklch(0.66 0.18 20)"></button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <div class="tweak-label">Density</div>
+      <div class="tweak-options" data-tweak="density">
+        <button class="tweak-opt active" data-value="comfortable">comfortable</button>
+        <button class="tweak-opt" data-value="compact">compact</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tweaks
+    const html = document.documentElement;
+    const tweaks = JSON.parse(localStorage.getItem('quarry_tweaks') || '{"theme":"light","accent":"amber","density":"comfortable"}');
+
+    function applyTweaks() {
+      html.setAttribute('data-theme', tweaks.theme);
+      html.setAttribute('data-accent', tweaks.accent);
+      html.setAttribute('data-density', tweaks.density);
+
+      document.querySelectorAll('[data-tweak="theme"] .tweak-opt').forEach(b => b.classList.toggle('active', b.dataset.value === tweaks.theme));
+      document.querySelectorAll('[data-tweak="accent"] .swatch').forEach(b => b.classList.toggle('active', b.dataset.value === tweaks.accent));
+      document.querySelectorAll('[data-tweak="density"] .tweak-opt').forEach(b => b.classList.toggle('active', b.dataset.value === tweaks.density));
+
+      localStorage.setItem('quarry_tweaks', JSON.stringify(tweaks));
+    }
+    applyTweaks();
+
+    document.getElementById('tweaksToggle').onclick = () => {
+      document.getElementById('tweaksPanel').classList.remove('hidden');
+      document.getElementById('tweaksToggle').classList.add('hidden');
+    };
+    document.getElementById('tweaksClose').onclick = () => {
+      document.getElementById('tweaksPanel').classList.add('hidden');
+      document.getElementById('tweaksToggle').classList.remove('hidden');
+    };
+
+    document.querySelectorAll('[data-tweak] button').forEach(btn => {
+      btn.onclick = () => {
+        const group = btn.closest('[data-tweak]').dataset.tweak;
+        tweaks[group] = btn.dataset.value;
+        applyTweaks();
+      };
+    });
+
+    // Extract panel toggle
+    document.addEventListener('DOMContentLoaded', () => {
+      const extractChip = document.getElementById('extractChip');
+      const extractPanel = document.getElementById('extractPanel');
+      if (extractChip && extractPanel) {
+        extractChip.onclick = () => {
+          const active = extractChip.classList.toggle('active');
+          extractPanel.classList.toggle('hidden', !active);
+          document.getElementById('extractInput').value = active ? 'on' : '';
+        };
+      }
+
+      // Loading overlay for search form
+      const searchForm = document.querySelector('form[action="/search"]');
+      if (searchForm) {
+        searchForm.addEventListener('submit', () => {
+          const overlay = document.getElementById('loadingOverlay');
+          const text = document.getElementById('loadingText');
+          const sub = document.getElementById('loadingSubtext');
+          const query = searchForm.querySelector('[name="query"]');
+          const hasExtract = document.getElementById('extractInput');
+
+          overlay.classList.remove('hidden');
+          text.textContent = 'Searching & crawling...';
+          if (hasExtract && hasExtract.value === 'on') {
+            sub.textContent = 'Searching, crawling pages, then running LLM extraction';
+          } else {
+            sub.textContent = 'Searching the web and crawling pages into markdown';
+          }
+
+          // Animate the loading text
+          const steps = ['Searching the web...', 'Crawling pages...', 'Converting to markdown...', 'Storing documents...'];
+          let step = 0;
+          setInterval(() => {
+            step = (step + 1) % steps.length;
+            text.textContent = steps[step];
+          }, 3000);
+        });
+      }
+
+      // Loading state for extraction forms
+      document.querySelectorAll('form[action^="/extract/"]').forEach(form => {
+        form.addEventListener('submit', () => {
+          const overlay = document.getElementById('loadingOverlay');
+          const text = document.getElementById('loadingText');
+          const sub = document.getElementById('loadingSubtext');
+          overlay.classList.remove('hidden');
+          text.textContent = 'Running LLM extraction...';
+          sub.textContent = 'Sending document to Cohere for structured extraction';
+          const btn = form.querySelector('button[type="submit"]');
+          if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active_page = 'history' %}
+{% block title %}History — Quarry{% endblock %}
+{% block crumbs %}<span class="sep">/</span><span class="cur">History</span>{% endblock %}
+
+{% block content %}
+<div class="page page-narrow">
+  <div style="margin-bottom: 22px;">
+    <h1 class="page-title">History</h1>
+    <p class="page-sub">Every search, re-runnable in one click. The agent keeps the trail so you can revisit.</p>
+  </div>
+
+  {% if grouped %}
+  <div class="timeline">
+    {% for day, items in grouped %}
+    <div class="timeline-group">
+      <div class="timeline-date">{{ day }}</div>
+      {% for s in items %}
+      <div class="search-entry">
+        <div>
+          <div class="search-query">"{{ s.query }}"</div>
+          <div class="search-entry-meta">
+            <span><strong>{{ s.result_count }}</strong> results</span>
+            <span><strong>{{ s.extracted_count }}</strong> extracted</span>
+            <span>{{ s.executed_at[11:16] }}</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <a href="/documents?q={{ s.query|urlencode }}" class="btn btn-sm">View</a>
+          <form method="POST" action="/search" style="display:inline">
+            <input type="hidden" name="query" value="{{ s.query }}">
+            <input type="hidden" name="max_results" value="{{ s.result_count or 5 }}">
+            <button type="submit" class="btn btn-sm btn-primary">
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4h-4M2 13V9h4M13.5 9a6 6 0 0 1-10.5 3M2.5 7a6 6 0 0 1 10.5-3"/></svg>
+              Re-run
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="title">No searches yet.</div>
+    <div><a href="/" style="color: var(--accent);">Start searching!</a></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
