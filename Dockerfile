@@ -13,11 +13,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Chromium's OS-level dependencies as root. The unprivileged app user
+# cannot apt-install, which is why crawl4ai-setup's dependency step failed
+# (su: Authentication failure) and left Chromium unable to launch at runtime.
+RUN python -m playwright install-deps chromium
+
 RUN chown -R app:app /app
 USER app
 
-# Install Chromium into /home/app/.cache as the app user
-RUN crawl4ai-setup
+# Download the Chromium browser binary into /home/app/.cache/ms-playwright as the
+# app user (OS deps already present from the root step). Do this explicitly —
+# crawl4ai-setup aborts its own browser download when its dep-install step
+# (which needs root) fails, leaving no Chromium binary at runtime.
+RUN python -m playwright install chromium
+RUN crawl4ai-setup || true
 
 USER root
 
