@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Missions — Quarry{% endblock %}
+{% block crumbs %}
+  <span class="sep">/</span><span class="cur">Missions</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <h1 style="margin:0 0 16px;">Missions</h1>
+
+  {% if not missions %}
+    <div class="card" style="padding:32px;text-align:center;color:var(--fg-subtle);">
+      No missions yet. Run an <a href="/agents">agent</a> to start one.
+    </div>
+  {% else %}
+    <div style="display:grid;gap:10px;">
+      {% for m in missions %}
+      <a href="/missions/{{ m.id }}" class="card"
+         style="padding:14px 18px;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;">
+        <span class="status-badge status-{{ m.status }}">{{ m.status.replace('_',' ') }}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.question }}</span>
+        <span class="mono" style="margin-left:auto;color:var(--fg-subtle);font-size:11px;">
+          {{ agents[m.agent_id].name if m.agent_id in agents else 'agent' }} · {{ m.created_at[:16].replace('T',' ') }}
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<style>
+  .status-badge{font:500 11px var(--font-mono);padding:2px 8px;border-radius:999px;
+    border:1px solid var(--border);color:var(--fg-subtle);white-space:nowrap;}
+  .status-done{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
+  .status-error{color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border));}
+  .status-awaiting_approval{color:var(--fg);border-color:var(--fg-subtle);}
+</style>
+{% endblock %}

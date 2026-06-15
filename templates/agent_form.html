@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}New agent — Quarry{% endblock %}
+{% block crumbs %}
+  <span class="sep">/</span><a href="/agents">Agents</a>
+  <span class="sep">/</span><span class="cur">New</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <h1 style="margin:0 0 16px;">New expert agent</h1>
+
+  <form method="post" action="/agents/new" class="card" style="padding:24px;display:grid;gap:18px;max-width:680px;">
+    <div>
+      <label class="tweak-label" for="name">Name</label>
+      <input id="name" name="name" class="input" maxlength="120" required
+             placeholder="e.g. Astrophysics Analyst" style="width:100%;">
+    </div>
+
+    <div>
+      <label class="tweak-label" for="expertise">Area of expertise</label>
+      <input id="expertise" name="expertise" class="input" maxlength="500" required
+             placeholder="e.g. observational astrophysics and cosmology" style="width:100%;">
+      <p style="margin:6px 0 0;color:var(--fg-subtle);font-size:12px;">
+        This seeds the agent's collection-manager persona (intelligence-style
+        PIR → EEI → SIR planning). Leave the override below blank to auto-generate it.
+      </p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div>
+        <label class="tweak-label" for="max_sources">Max sources</label>
+        <input id="max_sources" name="max_sources" class="input" type="number"
+               min="1" max="100" value="30" style="width:100%;">
+      </div>
+      <div>
+        <label class="tweak-label" for="max_passes">Max passes</label>
+        <input id="max_passes" name="max_passes" class="input" type="number"
+               min="1" max="10" value="4" style="width:100%;">
+      </div>
+      <div>
+        <label class="tweak-label" for="per_req_attempts">Tries / requirement</label>
+        <input id="per_req_attempts" name="per_req_attempts" class="input" type="number"
+               min="1" max="6" value="3" style="width:100%;">
+      </div>
+    </div>
+    <p style="margin:-6px 0 0;color:var(--fg-subtle);font-size:12px;">
+      Budget caps that bound the autonomous loop. "Tries / requirement" is the
+      circuit-breaker: a requirement still unmet after this many attempts is
+      flagged and the agent moves on.
+    </p>
+
+    <details>
+      <summary style="cursor:pointer;color:var(--fg-subtle);font-size:13px;">
+        Advanced — override persona prompt
+      </summary>
+      <textarea name="persona_prompt" rows="6" maxlength="5000"
+                placeholder="Leave blank to auto-generate from the area of expertise."
+                style="width:100%;margin-top:10px;" class="input"></textarea>
+    </details>
+
+    <div style="display:flex;gap:10px;">
+      <button type="submit" class="btn btn-primary">Create agent</button>
+      <a href="/agents" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Agents — Quarry{% endblock %}
+{% block crumbs %}
+  <span class="sep">/</span><span class="cur">Agents</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+    <div>
+      <h1 style="margin:0;">Expert agents</h1>
+      <p style="margin:4px 0 0;color:var(--fg-subtle);">
+        Each agent plans a collection effort, you approve it, then it autonomously
+        gathers sources until every requirement is met.
+      </p>
+    </div>
+    <a href="/agents/new" class="btn btn-primary" style="margin-left:auto;">+ New agent</a>
+  </div>
+
+  {% if not agents %}
+    <div class="card" style="padding:32px;text-align:center;color:var(--fg-subtle);">
+      No agents yet. <a href="/agents/new">Create your first expert agent</a> — e.g.
+      an astrophysics specialist that collects sources on demand.
+    </div>
+  {% else %}
+    <div style="display:grid;gap:16px;">
+      {% for a in agents %}
+      <div class="card" style="padding:20px;">
+        <div style="display:flex;align-items:baseline;gap:10px;">
+          <strong style="font-size:16px;">{{ a.name }}</strong>
+          <span class="mono" style="color:var(--fg-subtle);font-size:12px;">{{ a.expertise }}</span>
+          <span class="mono" style="margin-left:auto;color:var(--fg-subtle);font-size:11px;">
+            {{ a.default_max_sources }} sources · {{ a.default_max_passes }} passes · {{ a.default_per_req_attempts }} tries/req
+          </span>
+          <form method="post" action="/agents/{{ a.id }}/delete" style="margin:0;align-self:center;"
+                onsubmit="return confirm('Delete this agent? Its past missions are kept under History.');">
+            <button type="submit" class="btn btn-sm btn-ghost" title="Delete agent" style="color:var(--danger);">
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.5 9.5h5L11 4M6.5 6.5v5M9.5 6.5v5"/></svg>
+            </button>
+          </form>
+        </div>
+        <form method="post" action="/agents/{{ a.id }}/run"
+              style="display:flex;gap:8px;margin-top:14px;">
+          <input type="text" name="question" maxlength="500" required
+                 placeholder="Ask {{ a.name }} to research…"
+                 style="flex:1;" class="input">
+          <button type="submit" class="btn btn-primary">Run</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

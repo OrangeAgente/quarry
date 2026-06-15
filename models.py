@@ -9,6 +9,50 @@ class SearchResult(BaseModel):
     snippet: str
 
 
+class Agent(BaseModel):
+    """A saved, reusable expert persona that plans and runs collection."""
+    id: str
+    name: str
+    expertise: str
+    persona_prompt: str
+    default_max_passes: int = 4
+    default_max_sources: int = 30
+    default_per_req_attempts: int = 3
+    schedule_cron: Optional[str] = None  # Phase 2
+    active: int = 1
+    created_at: str
+
+
+class Requirement(BaseModel):
+    """An EEI — one collection requirement within a mission's plan."""
+    id: str
+    mission_id: str
+    title: str
+    description: str = ""
+    rationale: str = ""
+    status: str = "pending"  # pending | satisfied | unmet
+    attempts: int = 0
+    next_queries_json: Optional[str] = None  # JSON list[str] of queries to run next
+    satisfied_doc_ids_json: Optional[str] = None  # JSON list[str]
+
+
+class Mission(BaseModel):
+    """One execution of an agent against a question."""
+    id: str
+    agent_id: str
+    question: str
+    status: str = "planning"  # planning|awaiting_approval|collecting|synthesizing|done|error
+    plan_json: Optional[str] = None
+    budget_json: Optional[str] = None
+    brief_markdown: Optional[str] = None
+    job_id: Optional[str] = None
+    parent_mission_id: Optional[str] = None  # Phase 2 delta lineage
+    error: Optional[str] = None
+    created_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
 class Document(BaseModel):
     id: str
     url: str

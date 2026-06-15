@@ -1,0 +1,40 @@
+import json
+
+import pytest
+
+import agent_planner
+from models import Agent
+
+
+def _agent():
+    return Agent(id="a", name="n", expertise="x", persona_prompt="p", created_at="t")
+
+
+def test_plan_parses_requirements(monkeypatch):
+    monkeypatch.setattr(agent_planner, "chat_json", lambda s, u, **k: (
+        {"requirements": [
+            {"title": "Evidence", "description": "D", "rationale": "R", "queries": ["q1", "q2"]},
+        ]}, "raw"))
+    reqs = agent_planner.build_collection_plan(_agent(), "m1", "question")
+    assert len(reqs) == 1
+    assert reqs[0].title == "Evidence"
+    assert json.loads(reqs[0].next_queries_json) == ["q1", "q2"]
+
+
+def test_plan_synthesizes_query_when_missing(monkeypatch):
+    monkeypatch.setattr(agent_planner, "chat_json", lambda s, u, **k: (
+        {"requirements": [{"title": "Theories"}]}, "raw"))
+    reqs = agent_planner.build_collection_plan(_agent(), "m1", "Big Bang")
+    assert json.loads(reqs[0].next_queries_json) == ["Big Bang Theories"]
+
+
+def test_plan_empty_raises(monkeypatch):
+    monkeypatch.setattr(agent_planner, "chat_json", lambda s, u, **k: ({"requirements": []}, "raw"))
+    with pytest.raises(ValueError):
+        agent_planner.build_collection_plan(_agent(), "m1", "q")
+
+
+def test_plan_parse_failure_raises(monkeypatch):
+    monkeypatch.setattr(agent_planner, "chat_json", lambda s, u, **k: (None, "garbage"))
+    with pytest.raises(ValueError):
+        agent_planner.build_collection_plan(_agent(), "m1", "q")

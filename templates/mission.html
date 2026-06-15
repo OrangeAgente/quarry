@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Mission — Quarry{% endblock %}
+{% block crumbs %}
+  <span class="sep">/</span><a href="/missions">Missions</a>
+  <span class="sep">/</span><span class="cur">Mission</span>
+{% endblock %}
+
+{% block content %}
+<div class="page page-wide">
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+    <span class="status-badge status-{{ mission.status }}" id="statusBadge">{{ mission.status.replace('_',' ') }}</span>
+    {% if agent %}<span class="mono" style="color:var(--fg-subtle);font-size:12px;">{{ agent.name }} · {{ agent.expertise }}</span>{% endif %}
+    <span class="mono" id="elapsed" style="margin-left:auto;color:var(--fg-subtle);font-size:12px;"></span>
+  </div>
+  <h1 style="margin:0 0 18px;font-family:var(--font-serif);font-style:italic;">{{ mission.question }}</h1>
+
+  {% if mission.status == 'error' %}
+    <div class="flash error">Mission failed: {{ mission.error }}</div>
+  {% endif %}
+
+  {% if mission.status == 'awaiting_approval' %}
+  <div class="card" style="padding:20px;margin-bottom:20px;border-color:color-mix(in oklch,var(--accent) 40%,var(--border));">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <strong>Collection plan ready</strong>
+      <form method="post" action="/missions/{{ mission.id }}/approve" style="margin-left:auto;">
+        <button type="submit" class="btn btn-primary">Approve &amp; start collecting</button>
+      </form>
+    </div>
+    <p style="margin:0;color:var(--fg-subtle);font-size:13px;">
+      Review the {{ requirements|length }} requirements below. On approval the agent
+      collects autonomously until each is satisfied or capped.
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- Requirements matrix -->
+  <div class="card" style="padding:0;margin-bottom:20px;overflow:hidden;">
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <strong>Collection requirements</strong>
+      <span class="mono" id="coverage" style="margin-left:auto;color:var(--fg-subtle);font-size:12px;"></span>
+    </div>
+    <div>
+      {% for r in requirements %}
+      <div class="req-row" data-idx="{{ loop.index0 }}"
+           style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;">
+        <span class="status-badge status-req-{{ r.status }}" data-req-status>{{ r.status }}</span>
+        <div style="flex:1;">
+          <div style="font-weight:500;">{{ r.title }}</div>
+          {% if r.description %}<div style="color:var(--fg-subtle);font-size:13px;margin-top:2px;">{{ r.description }}</div>{% endif %}
+        </div>
+        <span class="mono" style="color:var(--fg-subtle);font-size:11px;" data-req-attempts>{{ r.attempts }} tries</span>
+      </div>
+      {% endfor %}
+      {% if not requirements %}
+      <div style="padding:18px;color:var(--fg-subtle);">Planning… requirements will appear shortly.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Brief (when done) -->
+  {% if brief_html %}
+  <div class="card" style="padding:24px;margin-bottom:20px;">
+    <strong style="display:block;margin-bottom:10px;">Brief</strong>
+    <div class="markdown-body">{{ brief_html|safe }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Live trace (while active) -->
+  {% if live and mission.status not in ('done','error') %}
+  <div class="log-pane" style="margin-bottom:20px;">
+    <div class="stream-head">
+      <span class="live-dot"></span>
+      <strong style="color:var(--fg)">Agent log</strong>
+      <span style="margin-left:auto" class="mono" id="traceMeta">working…</span>
+    </div>
+    <div class="log-stream" id="logStream"></div>
+  </div>
+  {% endif %}
+
+  <!-- Collected sources -->
+  {% if documents %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
+      <strong>Sources</strong>
+      <span class="mono" style="color:var(--fg-subtle);font-size:12px;margin-left:6px;">{{ documents|length }}</span>
+    </div>
+    {% for d in documents %}
+    <a href="/document/{{ d.id }}" class="card"
+       style="padding:10px 18px;border:0;border-bottom:1px solid var(--border);border-radius:0;display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit;">
+      <div style="flex:1;overflow:hidden;">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ d.title or d.domain }}</div>
+        <div class="mono" style="color:var(--fg-subtle);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ d.url }}</div>
+      </div>
+      <span class="mono" style="color:var(--fg-subtle);font-size:11px;">{{ d.word_count }}w</span>
+      {% if d.id in ext_ids %}<span class="mono" style="color:var(--accent);font-size:11px;">extracted</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+
+<style>
+  .status-badge{font:500 11px var(--font-mono);padding:2px 8px;border-radius:999px;
+    border:1px solid var(--border);color:var(--fg-subtle);white-space:nowrap;}
+  .status-done{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
+  .status-error{color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border));}
+  .status-collecting,.status-synthesizing,.status-planning{color:var(--fg);}
+  .status-req-satisfied{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
+  .status-req-unmet{color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border));}
+  .status-req-pending{color:var(--fg-subtle);}
+</style>
+
+<script>
+(function() {
+  const missionId = {{ mission.id|tojson }};
+  const initialStatus = {{ mission.status|tojson }};
+  const terminal = (initialStatus === 'done' || initialStatus === 'error');
+
+  const logStream = document.getElementById('logStream');
+  const traceMeta = document.getElementById('traceMeta');
+  const coverage = document.getElementById('coverage');
+  const elapsed = document.getElementById('elapsed');
+  let renderedLogs = 0;
+
+  function renderLog(entry) {
+    if (!logStream) return;
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    div.innerHTML = `
+      <span class="log-time">${entry.t.toFixed(2).padStart(5,'0')}</span>
+      <span class="log-level ${entry.level}">${entry.level.toUpperCase()}</span>
+      <span class="log-msg">${entry.msg}</span>`;
+    logStream.appendChild(div);
+    logStream.scrollTop = logStream.scrollHeight;
+  }
+
+  function updateRequirements(reqs) {
+    let sat = 0;
+    reqs.forEach((r, i) => {
+      if (r.status === 'satisfied') sat++;
+      const row = document.querySelector(`.req-row[data-idx="${i}"]`);
+      if (!row) return;
+      const badge = row.querySelector('[data-req-status]');
+      if (badge) { badge.textContent = r.status; badge.className = 'status-badge status-req-' + r.status; }
+      const tries = row.querySelector('[data-req-attempts]');
+      if (tries) tries.textContent = r.attempts + ' tries';
+    });
+    if (coverage) coverage.textContent = sat + '/' + reqs.length + ' satisfied';
+  }
+
+  function poll() {
+    fetch('/api/mission/' + missionId)
+      .then(r => r.json())
+      .then(s => {
+        if (s.error) return;
+        if (s.status !== initialStatus) { window.location.reload(); return; }
+        updateRequirements(s.requirements || []);
+        if (s.trace) {
+          if (elapsed) elapsed.textContent = '⏱ ' + s.trace.elapsed.toFixed(1) + 's';
+          const log = s.trace.log || [];
+          for (let i = renderedLogs; i < log.length; i++) renderLog(log[i]);
+          renderedLogs = log.length;
+          const inflight = (s.trace.urls || []).filter(u => u.status === 'fetching').length;
+          if (traceMeta) traceMeta.textContent = s.trace.stage + ' · ' + inflight + ' in flight';
+        }
+        if (!s.done) setTimeout(poll, 1200);
+      })
+      .catch(() => setTimeout(poll, 2500));
+  }
+
+  if (!terminal) poll();
+})();
+</script>
+{% endblock %}

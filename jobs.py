@@ -71,6 +71,24 @@ def create_job(query: str, max_results: int, extract: bool, extract_prompt: str)
     return job.id
 
 
+def create_mission_job(question: str, max_sources: int) -> str:
+    """A live-trace Job for an agentic mission. Deliberately NOT added to the
+    search sidebar (_recent_job_ids) — missions have their own /missions view."""
+    job = Job(
+        id=str(uuid.uuid4()),
+        query=question,
+        max_results=max_sources,
+        extract=False,
+        extract_prompt="",
+        started_at=time.time(),
+        stage="planning",
+        crawl_total=max_sources,
+    )
+    with _lock:
+        _store[job.id] = job
+    return job.id
+
+
 def get_sidebar_jobs() -> dict:
     with _lock:
         live = None
