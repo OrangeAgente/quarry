@@ -28,7 +28,7 @@
         <div class="search-divider"></div>
 
         <div class="search-options">
-          <span class="opt-num">
+          <span class="opt-num" id="resultsControl">
             <label>Results</label>
             <input type="number" name="max_results" value="{{ max_results or 5 }}" min="1" max="20">
           </span>
@@ -37,12 +37,60 @@
             LLM extraction
           </button>
           <input type="hidden" name="extract" id="extractInput" value="{{ 'on' if extract else '' }}">
+          <button type="button" id="agenticChip" class="opt-chip">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5l6-3.5ZM8 8l6-3M8 8v6.5M8 8 2 5"/></svg>
+            Agentic Crawl
+          </button>
           <div class="search-submit-row">
-            <button type="submit" class="btn btn-accent">
-              Run agent
+            <button type="submit" class="btn btn-accent" id="submitBtn">
+              Crawl a Topic
               <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
             </button>
           </div>
+        </div>
+
+        <div id="agenticPanel" class="extract-panel hidden">
+          {% if agents %}
+          <label>
+            <svg class="ico" style="width:11px;height:11px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5l6-3.5Z"/></svg>
+            Agentic Crawl
+            <span style="color: var(--fg-subtle); font-weight: 400; text-transform: none; letter-spacing: 0;">— the agent plans a collection, you approve it, then it crawls autonomously</span>
+          </label>
+          <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;">
+            <div class="ag-field" style="flex:1; min-width:220px;">
+              <label class="ag-label">Agent</label>
+              <select name="agent_id" id="agentSelect" class="select" style="width:100%;">
+                {% for a in agents %}
+                <option value="{{ a.id }}"
+                        data-sources="{{ a.default_max_sources }}"
+                        data-passes="{{ a.default_max_passes }}"
+                        data-tries="{{ a.default_per_req_attempts }}">{{ a.name }} — {{ a.expertise }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="ag-field">
+              <label class="ag-label">Sources</label>
+              <input type="number" class="select" style="width:84px;" name="max_sources" id="agSources" min="1" max="100" value="{{ agents[0].default_max_sources }}">
+            </div>
+            <div class="ag-field">
+              <label class="ag-label">Passes</label>
+              <input type="number" class="select" style="width:84px;" name="max_passes" id="agPasses" min="1" max="10" value="{{ agents[0].default_max_passes }}">
+            </div>
+            <div class="ag-field">
+              <label class="ag-label">Tries/req</label>
+              <input type="number" class="select" style="width:84px;" name="per_req_attempts" id="agTries" min="1" max="6" value="{{ agents[0].default_per_req_attempts }}">
+            </div>
+          </div>
+          <style>
+            .ag-field { display:flex; flex-direction:column; gap:5px; }
+            .ag-label { font-size:11px; color:var(--fg-muted); padding:0; text-transform:none; letter-spacing:0; font-weight:500; }
+          </style>
+          {% else %}
+          <label>Agentic Crawl</label>
+          <p style="margin:6px 0 0; color: var(--fg-subtle); font-size: 13px;">
+            No agents yet. <a href="/agents/new" style="color: var(--accent);">Create an expert agent</a> to use Agentic Crawl.
+          </p>
+          {% endif %}
         </div>
 
         <div id="extractPanel" class="extract-panel {{ '' if extract else 'hidden' }}">
@@ -167,4 +215,52 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  const agenticChip = document.getElementById('agenticChip');
+  if (!agenticChip) return;
+  const form = agenticChip.closest('form');
+  const agenticPanel = document.getElementById('agenticPanel');
+  const agentSelect = document.getElementById('agentSelect');
+  const extractChip = document.getElementById('extractChip');
+  const extractPanel = document.getElementById('extractPanel');
+  const extractInput = document.getElementById('extractInput');
+  const resultsControl = document.getElementById('resultsControl');
+  const agSources = document.getElementById('agSources');
+  const agPasses = document.getElementById('agPasses');
+  const agTries = document.getElementById('agTries');
+  let agentic = false;
+
+  function syncParams() {
+    if (!agentSelect || !agSources) return;
+    const o = agentSelect.selectedOptions[0];
+    if (!o) return;
+    agSources.value = o.dataset.sources;
+    agPasses.value = o.dataset.passes;
+    agTries.value = o.dataset.tries;
+  }
+
+  agenticChip.addEventListener('click', function () {
+    agentic = !agentic;
+    agenticChip.classList.toggle('active', agentic);
+    agenticPanel.classList.toggle('hidden', !agentic);
+    // LLM extraction stays available — it applies to the collected sources
+    // either way. Only the per-search "Results" count is N/A for agentic crawl.
+    if (resultsControl) resultsControl.classList.toggle('hidden', agentic);
+    if (agentic) syncParams();
+  });
+
+  if (agentSelect) agentSelect.addEventListener('change', syncParams);
+
+  form.addEventListener('submit', function (e) {
+    if (agentic) {
+      if (!agentSelect) { e.preventDefault(); window.location.href = '/agents/new'; return; }
+      form.action = '/agents/' + agentSelect.value + '/run';
+    } else {
+      form.action = '/search';
+    }
+  });
+})();
+</script>
 {% endblock %}
