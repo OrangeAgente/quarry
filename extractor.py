@@ -4,9 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-import litellm
-
-from config import settings
+from llm import chat, model_for
 from models import Document, ExtractedData
 
 DEFAULT_PROMPT = (
@@ -34,29 +32,18 @@ def extract_from_document(
     if len(content) > 20000:
         content = content[:20000] + "\n\n[...truncated...]"
 
-    print(f"[EXTRACT] Starting extraction for {doc.url} ({len(content)} chars)", file=sys.stderr, flush=True)
+    model = model_for("fast")
+    print(f"[EXTRACT] {model} on {doc.url} ({len(content)} chars)", file=sys.stderr, flush=True)
 
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a data extraction assistant. Extract structured information from web documents. Always respond with valid JSON.",
-        },
-        {
-            "role": "user",
-            "content": f"{prompt}\n\n---\nDOCUMENT SOURCE: {doc.url}\n---\n\n{content}",
-        },
-    ]
+    system = (
+        "You are a data extraction assistant. Extract structured information "
+        "from web documents. Always respond with valid JSON."
+    )
+    user = f"{prompt}\n\n---\nDOCUMENT SOURCE: {doc.url}\n---\n\n{content}"
 
     try:
-        response = litellm.completion(
-            model=settings.llm_provider,
-            messages=messages,
-            api_key=settings.cohere_api_key,
-            temperature=0.0,
-            max_tokens=2000,
-        )
-
-        result_text = response.choices[0].message.content
+        # Summarization-style work -> "fast" tier (e.g. local Ollama qwen2.5:14b).
+        result_text = chat(system, user, temperature=0.0, max_tokens=2000, tier="fast")
         print(f"[EXTRACT] Got response ({len(result_text)} chars)", file=sys.stderr, flush=True)
 
         # Try to parse as JSON, wrap in object if needed
@@ -69,7 +56,7 @@ def extract_from_document(
         return ExtractedData(
             id=str(uuid.uuid4()),
             document_id=doc.id,
-            model=settings.llm_provider,
+            model=model,
             extracted_at=datetime.now(timezone.utc).isoformat(),
             prompt=prompt[:500],
             data_json=result_json,

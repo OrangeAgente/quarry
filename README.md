@@ -42,7 +42,7 @@ All settings come from `.env` (see `.env.example`):
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `COHERE_API_KEY` | API key for the LLM extractor | *(empty — extraction will fail)* |
-| `LLM_PROVIDER` | LiteLLM model identifier | `cohere/command-r-plus` |
+| `LLM_PROVIDER` | LiteLLM model identifier | `cohere/command-a-03-2025` |
 | `SEARCH_MAX_RESULTS` | Default result count for the search form | `5` |
 | `DB_PATH` | SQLite file path | `data/research.db` |
 | `CRAWL_TIMEOUT` | Per-page crawl timeout (ms) | `30000` |
