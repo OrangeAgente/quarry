@@ -7,6 +7,21 @@
 {% endblock %}
 
 {% block content %}
+{# Renders extraction values regardless of shape: plain strings, {name,value}
+   or {text}/{fact} objects, nested lists, or arbitrary dicts. Different models
+   (Cohere vs local qwen) emit different shapes; this normalizes them. #}
+{%- macro render_val(v) -%}
+  {%- if v is string -%}{{ v }}
+  {%- elif v is mapping -%}
+    {%- if v.name is defined and v.value is defined -%}<strong>{{ v.name }}:</strong> {{ render_val(v.value) }}
+    {%- elif v.text is defined -%}{{ render_val(v.text) }}
+    {%- elif v.fact is defined -%}{{ render_val(v.fact) }}
+    {%- else -%}{% for k, val in v.items() %}<strong>{{ k }}:</strong> {{ render_val(val) }}{% if not loop.last %}; {% endif %}{% endfor %}
+    {%- endif -%}
+  {%- elif v is iterable -%}{% for item in v %}{{ render_val(item) }}{% if not loop.last %} · {% endif %}{% endfor %}
+  {%- else -%}{{ v }}
+  {%- endif -%}
+{%- endmacro -%}
 <div class="page page-wide">
   <div class="doc-layout">
     <!-- Left: document content -->
@@ -118,7 +133,7 @@
                 {% for f in data.key_facts %}
                 <div class="fact">
                   <span class="bullet">{{ '%02d'|format(loop.index) }}</span>
-                  <span>{% if f is mapping %}{{ f.text or f.fact or f|tojson }}{% else %}{{ f }}{% endif %}</span>
+                  <span>{{ render_val(f) }}</span>
                 </div>
                 {% endfor %}
               </div>
@@ -130,7 +145,7 @@
               <div class="kv-key" style="margin-bottom: 6px;">Topics</div>
               <div class="chips">
                 {% for t in data.topics %}
-                <span class="chip chip-accent">{{ t if t is string else t|tojson }}</span>
+                <span class="chip chip-accent">{{ render_val(t) }}</span>
                 {% endfor %}
               </div>
             </div>
@@ -138,34 +153,21 @@
 
             {% if data and data.entities %}
             <div class="kv">
-              {% if data.entities.people %}
-              <div class="kv-row">
-                <span class="kv-key">People</span>
-                <span class="kv-val">{{ data.entities.people|join(' · ') }}</span>
-              </div>
-              {% endif %}
-              {% if data.entities.organizations %}
-              <div class="kv-row">
-                <span class="kv-key">Organizations</span>
-                <span class="kv-val">{{ data.entities.organizations|join(' · ') }}</span>
-              </div>
-              {% elif data.entities.orgs %}
-              <div class="kv-row">
-                <span class="kv-key">Organizations</span>
-                <span class="kv-val">{{ data.entities.orgs|join(' · ') }}</span>
-              </div>
-              {% endif %}
-              {% if data.entities.locations %}
-              <div class="kv-row">
-                <span class="kv-key">Locations</span>
-                <span class="kv-val">{{ data.entities.locations|join(' · ') }}</span>
-              </div>
-              {% endif %}
-              {% if data.entities.dates %}
-              <div class="kv-row">
-                <span class="kv-key">Dates</span>
-                <span class="kv-val mono">{{ data.entities.dates|join(' · ') }}</span>
-              </div>
+              {% if data.entities is mapping %}
+                {% for key, val in data.entities.items() %}
+                {% if val %}
+                <div class="kv-row">
+                  <span class="kv-key">{{ key|replace('_',' ')|title }}</span>
+                  <span class="kv-val{% if key == 'dates' %} mono{% endif %}">{{ render_val(val) }}</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+              {% else %}
+                {% for e in data.entities %}
+                <div class="kv-row">
+                  <span class="kv-val">{{ render_val(e) }}</span>
+                </div>
+                {% endfor %}
               {% endif %}
             </div>
             {% endif %}
