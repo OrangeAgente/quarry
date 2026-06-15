@@ -7,8 +7,18 @@
 <div class="page page-narrow">
   <div style="margin-bottom: 22px;">
     <h1 class="page-title">History</h1>
-    <p class="page-sub">Every search, re-runnable in one click. The agent keeps the trail so you can revisit.</p>
+    <p class="page-sub">Every one-shot search and agentic mission, newest first. Re-run searches or reopen missions in one click.</p>
   </div>
+
+  <style>
+    .hist-tag{font:500 9.5px var(--font-mono);text-transform:uppercase;letter-spacing:.04em;
+      padding:1px 6px;border-radius:999px;border:1px solid var(--border);color:var(--fg-subtle);
+      margin-right:6px;vertical-align:middle;}
+    .hist-tag-mission{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
+    .hist-status{font-family:var(--font-mono);font-size:11px;}
+    .hist-status.status-done{color:var(--accent);}
+    .hist-status.status-error{color:var(--danger);}
+  </style>
 
   {% if grouped %}
   <div class="timeline">
@@ -16,9 +26,33 @@
     <div class="timeline-group">
       <div class="timeline-date">{{ day }}</div>
       {% for s in items %}
+      {% if s.kind == 'mission' %}
       <div class="search-entry">
         <div>
-          <div class="search-query">"{{ s.query }}"</div>
+          <div class="search-query">
+            <span class="hist-tag hist-tag-mission">mission</span>
+            "{{ s.question }}"
+          </div>
+          <div class="search-entry-meta">
+            <span>{{ s.agent_name }}</span>
+            <span><strong>{{ s.req_satisfied }}/{{ s.req_total }}</strong> requirements</span>
+            <span><strong>{{ s.doc_count }}</strong> sources</span>
+            <span class="hist-status status-{{ s.status }}">{{ s.status.replace('_',' ') }}</span>
+            <span>{{ s.created_at[11:16] }}</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <a href="/documents?mission={{ s.id }}" class="btn btn-sm">View sources</a>
+          <a href="/missions/{{ s.id }}" class="btn btn-sm btn-primary">Open mission</a>
+        </div>
+      </div>
+      {% else %}
+      <div class="search-entry">
+        <div>
+          <div class="search-query">
+            <span class="hist-tag">search</span>
+            "{{ s.query }}"
+          </div>
           <div class="search-entry-meta">
             <span><strong>{{ s.result_count }}</strong> results</span>
             <span><strong>{{ s.extracted_count }}</strong> extracted</span>
@@ -43,6 +77,7 @@
           </form>
         </div>
       </div>
+      {% endif %}
       {% endfor %}
     </div>
     {% endfor %}

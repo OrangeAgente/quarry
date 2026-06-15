@@ -13,6 +13,12 @@
         <strong>{{ documents|length }}</strong> match{{ '' if documents|length == 1 else 'es' }} for <em>"{{ full_text_query }}"</em>{% if search_filter %} within search <em>"{{ search_filter }}"</em>{% endif %} &middot;
         <a href="/documents" style="color: var(--accent);">clear</a>
       </p>
+      {% elif mission_filter %}
+      <p class="page-sub">
+        Sources from mission <em>"{{ mission_obj.question if mission_obj else mission_filter }}"</em> &middot;
+        {% if mission_obj %}<a href="/missions/{{ mission_filter }}" style="color: var(--accent);">open mission</a> &middot;{% endif %}
+        <a href="/documents" style="color: var(--accent);">clear filter</a>
+      </p>
       {% elif search_filter %}
       <p class="page-sub">
         Filtered to documents from search <em>"{{ search_filter }}"</em> &middot;
@@ -22,7 +28,24 @@
       <p class="page-sub">Every page the agent has crawled for you, deduplicated by URL and searchable.</p>
       {% endif %}
     </div>
-    <div style="display: flex; gap: 8px;">
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <select id="libCollection" class="select" title="Filter the library by a search or mission">
+        <option value="/documents" {{ 'selected' if not search_filter and not mission_filter }}>All collections</option>
+        {% if search_queries %}
+        <optgroup label="Searches">
+          {% for s in search_queries %}
+          <option value="/documents?search={{ s.query|urlencode }}" {{ 'selected' if search_filter == s.query }}>{{ s.query[:55] }} ({{ s.runs }})</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+        {% if missions %}
+        <optgroup label="Missions">
+          {% for m in missions %}
+          <option value="/documents?mission={{ m.id }}" {{ 'selected' if mission_filter == m.id }}>{{ m.question[:55] }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+      </select>
       <a href="/" class="btn btn-primary">
         <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg>
         New search
@@ -30,9 +53,16 @@
     </div>
   </div>
 
+  <script>
+    document.getElementById('libCollection').addEventListener('change', function (e) {
+      window.location.href = e.target.value;
+    });
+  </script>
+
   {% if documents %}
   <form class="library-toolbar" method="get" action="/documents" id="libForm">
     {% if search_filter %}<input type="hidden" name="search" value="{{ search_filter }}">{% endif %}
+    {% if mission_filter %}<input type="hidden" name="mission" value="{{ mission_filter }}">{% endif %}
     <div class="lib-search">
       <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM11 11l3.5 3.5"/></svg>
       <input id="libSearch" name="q" placeholder="Filter titles… (Enter for full-text content search)" value="{{ full_text_query or '' }}">
