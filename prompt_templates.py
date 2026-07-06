@@ -66,9 +66,13 @@ WHAT IT NEEDS: {description}
 COLLECTED SOURCES (title + excerpt):
 {sources}
 
-Decide if the requirement is now adequately satisfied by these sources. If it \
-is NOT satisfied, propose 1-3 refined web-search queries aimed specifically at \
-the missing information (do not repeat queries that clearly failed).
+Decide if these sources, taken together, give a well-grounded answer to the \
+requirement. To count as satisfied they must cover the requirement's specific \
+substance — the facts, mechanisms, or evidence it asks for — not merely mention \
+the topic. Exhaustive or academic-grade completeness is NOT required. If the \
+specifics are missing or only superficially touched, mark it unsatisfied and \
+propose 1-3 refined web-search queries aimed at the gap (do not repeat queries \
+that clearly failed).
 
 Respond with ONLY valid JSON in exactly this shape:
 {{

@@ -16,9 +16,26 @@ class Assessment:
     next_queries: list[str]
 
 
+_JUNK_TITLE_MARKERS = ("checking your browser", "recaptcha", "captcha",
+                       "are you a robot", "just a moment", "access denied")
+
+
+def is_usable(d: Document, min_words: int = 60) -> bool:
+    """Drop captcha/blocked/near-empty pages so they don't crowd out real
+    content in the LLM's limited view."""
+    if (d.word_count or 0) < min_words:
+        return False
+    title = (d.title or "").lower()
+    return not any(m in title for m in _JUNK_TITLE_MARKERS)
+
+
 def _sources_block(docs: list[Document], max_docs: int = 6, excerpt_chars: int = 2000) -> str:
+    # Deprioritize junk (captcha/near-empty) rather than dropping it: every
+    # collected doc can still feed the assessment when slots remain, so a
+    # short-but-valid page is never invisible to the grader.
+    ranked = sorted(docs, key=lambda d: not is_usable(d))  # stable: usable first
     lines = []
-    for i, d in enumerate(docs[:max_docs], 1):
+    for i, d in enumerate(ranked[:max_docs], 1):
         body = (d.content_fit or d.content_markdown or "")[:excerpt_chars]
         lines.append(f"[{i}] {d.title or d.domain} ({d.url})\n{body}")
     return "\n\n".join(lines)

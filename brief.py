@@ -4,6 +4,7 @@ since last run") for scheduled runs.
 """
 from models import Document, Mission, Requirement
 from llm import chat
+from agent_assessor import is_usable
 from prompt_templates import build_brief_prompt
 
 
@@ -15,9 +16,12 @@ def _coverage_block(requirements: list[Requirement]) -> str:
     return "\n".join(lines) or "(no requirements)"
 
 
-def _sources_block(docs: list[Document], max_docs: int = 30, excerpt_chars: int = 800) -> str:
+def _sources_block(docs: list[Document], max_docs: int = 20, excerpt_chars: int = 2200) -> str:
+    # Usable (non-junk) docs first, but never drop a doc while slots remain —
+    # mirrors agent_assessor._sources_block.
+    ranked = sorted(docs, key=lambda d: not is_usable(d))
     lines = []
-    for i, d in enumerate(docs[:max_docs], 1):
+    for i, d in enumerate(ranked[:max_docs], 1):
         body = (d.content_fit or d.content_markdown or "")[:excerpt_chars]
         lines.append(f"[{i}] {d.title or d.domain} — {d.url}\n{body}")
     return "\n\n".join(lines)
