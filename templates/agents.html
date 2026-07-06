@@ -32,6 +32,9 @@
           <span class="mono" style="margin-left:auto;color:var(--fg-subtle);font-size:11px;">
             {{ a.default_max_sources }} sources · {{ a.default_max_passes }} passes · {{ a.default_per_req_attempts }} tries/req
           </span>
+          <a href="/agents/{{ a.id }}/edit" class="btn btn-sm btn-ghost" title="Edit agent" style="align-self:center;">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5 13.5 4.5M2.5 13.5l.7-2.6 7-7 1.9 1.9-7 7-2.6.7Z"/></svg>
+          </a>
           <form method="post" action="/agents/{{ a.id }}/delete" style="margin:0;align-self:center;"
                 onsubmit="return confirm('Delete this agent? Its past missions are kept under History.');">
             <button type="submit" class="btn btn-sm btn-ghost" title="Delete agent" style="color:var(--danger);">

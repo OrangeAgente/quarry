@@ -2,13 +2,14 @@ import asyncio
 import hashlib
 import json
 import secrets
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
 
 from flask import Flask, Response, render_template, request, redirect, url_for, flash, stream_with_context
 
-from config import settings
+from config import settings, save_overrides, known_models
 from search import web_search
 from crawler import crawl_urls
 from storage import (
@@ -18,7 +19,7 @@ from storage import (
     count_documents, count_searches, count_extractions, count_domains,
     get_doc_ids_with_extractions, get_search_history_enriched,
     get_related_documents, search_documents_fts,
-    insert_agent, get_agent, list_agents, delete_agent,
+    insert_agent, get_agent, list_agents, update_agent, delete_agent,
     insert_mission, update_mission, get_mission, list_missions,
     get_requirements_for_mission, get_mission_documents,
     get_missions_enriched, get_distinct_search_queries,
@@ -45,6 +46,8 @@ def inject_globals():
         llm_provider = settings.llm_provider
         llm_model = llm_provider.split("/")[-1] if "/" in llm_provider else llm_provider
         llm_vendor = llm_provider.split("/")[0] if "/" in llm_provider else llm_provider
+        fast = settings.llm_provider_fast
+        llm_fast_model = (fast.split("/")[-1] if "/" in fast else fast) if fast else "—"
         sidebar = get_sidebar_jobs()
         return dict(
             doc_count=doc_ct,
@@ -52,6 +55,8 @@ def inject_globals():
             extraction_count=extract_ct,
             llm_vendor=llm_vendor.title(),
             llm_model=llm_model,
+            llm_fast_model=llm_fast_model,
+            default_results=settings.search_max_results,
             live_job=sidebar["live"],
             previous_jobs=sidebar["previous"],
         )
@@ -59,6 +64,7 @@ def inject_globals():
         return dict(
             doc_count=0, search_count=0, extraction_count=0,
             llm_vendor="Cohere", llm_model="command-a-03-2025",
+            llm_fast_model="—", default_results=5,
             live_job=None, previous_jobs=[],
         )
 
@@ -77,10 +83,36 @@ def run_async(coro):
 
 
 @app.before_request
+def block_cross_site_posts():
+    """CSRF defense via origin checking (no tokens needed): browsers label
+    cross-site requests with Sec-Fetch-Site / a mismatching Origin, so a
+    malicious page can't blind-POST to this (unauthenticated, localhost-bound)
+    app. Same-origin form posts and non-browser clients are unaffected."""
+    if request.method != "POST":
+        return None
+    sfs = request.headers.get("Sec-Fetch-Site")
+    if sfs and sfs not in ("same-origin", "same-site", "none"):
+        return "Cross-site POST blocked", 403
+    origin = request.headers.get("Origin")
+    if origin and origin != "null":
+        from urllib.parse import urlparse
+        if urlparse(origin).netloc != request.host:
+            return "Cross-site POST blocked", 403
+    return None
+
+
+_init_db_lock = threading.Lock()
+
+
+@app.before_request
 def ensure_db():
+    # Double-checked lock: under gunicorn's threaded worker, concurrent first
+    # requests must not run init_db (and its FTS rebuild) twice in parallel.
     if not getattr(app, '_db_initialized', False):
-        run_async(init_db())
-        app._db_initialized = True
+        with _init_db_lock:
+            if not getattr(app, '_db_initialized', False):
+                run_async(init_db())
+                app._db_initialized = True
 
 
 @app.route("/")
@@ -382,6 +414,43 @@ def agent_new():
     return render_template("agent_form.html", active_page="agents")
 
 
+@app.route("/agents/<agent_id>/edit", methods=["GET", "POST"])
+def agent_edit(agent_id):
+    agent = run_async(get_agent(agent_id))
+    if not agent:
+        flash("Agent not found.", "error")
+        return redirect(url_for("agents_list"))
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()[:120]
+        expertise = request.form.get("expertise", "").strip()[:500]
+        if not name or not expertise:
+            flash("Name and area of expertise are required.", "error")
+            return redirect(url_for("agent_edit", agent_id=agent_id))
+
+        def _clamp(field, default, lo, hi):
+            try:
+                return max(lo, min(hi, int(request.form.get(field, default))))
+            except (TypeError, ValueError):
+                return default
+
+        # Blank persona regenerates from the (possibly changed) expertise.
+        custom_persona = request.form.get("persona_prompt", "").strip()[:5000]
+        persona = custom_persona or build_persona(expertise)
+
+        run_async(update_agent(
+            agent_id,
+            name=name, expertise=expertise, persona_prompt=persona,
+            default_max_passes=_clamp("max_passes", agent.default_max_passes, 1, 10),
+            default_max_sources=_clamp("max_sources", agent.default_max_sources, 1, 100),
+            default_per_req_attempts=_clamp("per_req_attempts", agent.default_per_req_attempts, 1, 6),
+        ))
+        flash(f"Agent “{name}” updated.", "success")
+        return redirect(url_for("agents_list"))
+
+    return render_template("agent_form.html", agent=agent, active_page="agents")
+
+
 @app.route("/agents/<agent_id>/delete", methods=["POST"])
 def agent_delete(agent_id):
     agent = run_async(get_agent(agent_id))
@@ -509,6 +578,33 @@ def api_mission(mission_id):
                 "log": js["log"], "urls": js["urls"],
             }
     return state
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings_page():
+    if request.method == "POST":
+        vals = {
+            "llm_provider": request.form.get("llm_provider", "").strip()[:200] or settings.llm_provider,
+            # Fast tier may be intentionally blank (falls back to reasoning).
+            "llm_provider_fast": request.form.get("llm_provider_fast", "").strip()[:200],
+            "ollama_api_base": request.form.get("ollama_api_base", "").strip()[:300] or settings.ollama_api_base,
+        }
+        try:
+            vals["search_max_results"] = max(1, min(20, int(request.form.get("search_max_results", settings.search_max_results))))
+        except (TypeError, ValueError):
+            vals["search_max_results"] = settings.search_max_results
+        # Only overwrite the API key when a new one is supplied.
+        key = request.form.get("cohere_api_key", "").strip()
+        if key:
+            vals["cohere_api_key"] = key
+        save_overrides(vals)
+        flash("Settings saved — applied immediately, no restart needed.", "success")
+        return redirect(url_for("settings_page"))
+
+    return render_template(
+        "settings.html", s=settings, models=known_models(),
+        has_key=bool(settings.cohere_api_key), active_page="settings",
+    )
 
 
 if __name__ == "__main__":

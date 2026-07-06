@@ -35,6 +35,10 @@
           <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5l6-3.5ZM8 8l6-3M8 8v6.5M8 8 2 5"/></svg>
           <span>Missions</span>
         </a>
+        <a href="/settings" class="nav-item {{ 'active' if active_page == 'settings' }}">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM13.5 8c0-.5 0-1-.1-1.4l1.4-1.1L13.5 3l-1.7.7c-.7-.5-1.4-.9-2.2-1L9.5 1h-3l-.1 1.7c-.8.1-1.5.5-2.2 1L2.5 3 1.2 5.5l1.4 1.1c-.1.4-.1.9-.1 1.4s0 1 .1 1.4L1.2 10.5 2.5 13l1.7-.7c.7.5 1.4.9 2.2 1L6.5 15h3l.1-1.7c.8-.1 1.5-.5 2.2-1l1.7.7 1.3-2.5-1.4-1.1c.1-.4.1-.9.1-1.4Z"/></svg>
+          <span>Settings</span>
+        </a>
       </div>
 
       {% if live_job %}
@@ -75,13 +79,14 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="credits-card">
+        <a href="/settings" class="credits-card" style="display:block; text-decoration:none; color:inherit;" title="Edit providers in Settings">
           <div class="credits-row">
-            <span>LLM Provider</span>
-            <span class="credits-val">{{ llm_vendor }}</span>
+            <span>Reasoning</span>
+            <span class="credits-val">{{ llm_model }}</span>
           </div>
           <div class="credits-row">
-            <span>{{ llm_model }}</span>
+            <span>Fast</span>
+            <span class="credits-val">{{ llm_fast_model }}</span>
           </div>
           <div style="margin-top: 4px; border-top: 1px solid var(--border); padding-top: 6px;">
             <div class="credits-row">
@@ -89,7 +94,7 @@
               <span class="credits-val">{{ extraction_count }}</span>
             </div>
           </div>
-        </div>
+        </a>
       </div>
     </aside>
 

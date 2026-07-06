@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Settings — Quarry{% endblock %}
+{% block crumbs %}<span class="sep">/</span><span class="cur">Settings</span>{% endblock %}
+
+{% block content %}
+<div class="page">
+  <h1 style="margin:0 0 4px;">Settings</h1>
+  <p class="page-sub" style="margin:0 0 20px;">
+    Choose your LLM providers. Changes apply immediately and persist in the data
+    volume (they take precedence over <code>.env</code>).
+  </p>
+
+  <form method="post" action="/settings" class="card" style="padding:24px; display:grid; gap:20px; max-width:680px;">
+
+    <datalist id="model-list">
+      {% for m in models %}<option value="{{ m }}"></option>{% endfor %}
+    </datalist>
+
+    <div>
+      <label class="tweak-label" for="llm_provider">Reasoning model</label>
+      <input id="llm_provider" name="llm_provider" class="select" style="width:100%;" list="model-list"
+             value="{{ s.llm_provider }}" placeholder="cohere/command-a-03-2025">
+      <p style="margin:6px 0 0; color:var(--fg-subtle); font-size:12px;">
+        Used for <strong>planning</strong> and <strong>gap assessment</strong>. Any
+        LiteLLM id, e.g. <code>cohere/command-a-03-2025</code>,
+        <code>anthropic/claude-sonnet-4-5</code>, <code>openai/gpt-4o-mini</code>.
+      </p>
+    </div>
+
+    <div>
+      <label class="tweak-label" for="llm_provider_fast">Fast model <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      <input id="llm_provider_fast" name="llm_provider_fast" class="select" style="width:100%;" list="model-list"
+             value="{{ s.llm_provider_fast }}" placeholder="ollama_chat/qwen2.5:14b — leave blank to reuse the reasoning model">
+      <p style="margin:6px 0 0; color:var(--fg-subtle); font-size:12px;">
+        Used for <strong>brief synthesis</strong> and <strong>document extraction</strong>.
+        Leave blank to use the reasoning model for everything. For a local Ollama
+        model use <code>ollama_chat/&lt;model&gt;</code>.
+      </p>
+    </div>
+
+    <div>
+      <label class="tweak-label" for="ollama_api_base">Ollama API base</label>
+      <input id="ollama_api_base" name="ollama_api_base" class="select" style="width:100%;"
+             value="{{ s.ollama_api_base }}" placeholder="http://host.docker.internal:11434">
+      <p style="margin:6px 0 0; color:var(--fg-subtle); font-size:12px;">
+        Only used for <code>ollama/</code> models. From this container, the host is
+        <code>host.docker.internal</code>.
+      </p>
+    </div>
+
+    <div>
+      <label class="tweak-label" for="cohere_api_key">Hosted-provider API key</label>
+      <input id="cohere_api_key" name="cohere_api_key" type="password" class="select" style="width:100%;"
+             placeholder="{{ '•••••••• set — leave blank to keep' if has_key else 'not set' }}">
+      <p style="margin:6px 0 0; color:var(--fg-subtle); font-size:12px;">
+        Passed to Cohere-style providers. Stored in the data volume; leave blank to
+        keep the current key. (For OpenAI/Anthropic, LiteLLM also reads
+        <code>OPENAI_API_KEY</code>/<code>ANTHROPIC_API_KEY</code> from the environment.)
+      </p>
+    </div>
+
+    <div>
+      <label class="tweak-label" for="search_max_results">Default search results</label>
+      <input id="search_max_results" name="search_max_results" type="number" min="1" max="20"
+             class="select" style="width:120px;" value="{{ s.search_max_results }}">
+    </div>
+
+    <div>
+      <button type="submit" class="btn btn-primary">Save settings</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

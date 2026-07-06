@@ -442,6 +442,19 @@ async def get_agent(agent_id: str) -> Optional[Agent]:
             return Agent(**dict(row)) if row else None
 
 
+async def update_agent(agent_id: str, **fields) -> None:
+    if not fields:
+        return
+    db_path = get_db_path()
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            f"UPDATE agents SET {cols} WHERE id = ?",
+            (*fields.values(), agent_id),
+        )
+        await db.commit()
+
+
 async def delete_agent(agent_id: str) -> None:
     """Delete the agent row only. Its past missions, requirements, and the
     crawled documents are preserved (missions render gracefully without their
