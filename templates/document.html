@@ -12,11 +12,17 @@
    (Cohere vs local qwen) emit different shapes; this normalizes them. #}
 {%- macro render_val(v) -%}
   {%- if v is string -%}{{ v }}
+  {%- elif v is number or v is boolean -%}{{ v }}
   {%- elif v is mapping -%}
-    {%- if v.name is defined and v.value is defined -%}<strong>{{ v.name }}:</strong> {{ render_val(v.value) }}
-    {%- elif v.text is defined -%}{{ render_val(v.text) }}
-    {%- elif v.fact is defined -%}{{ render_val(v.fact) }}
-    {%- else -%}{% for k, val in v.items() %}<strong>{{ k }}:</strong> {{ render_val(val) }}{% if not loop.last %}; {% endif %}{% endfor %}
+    {#- Shortcut branches only for EXACT shapes — a dict with extra sibling
+        keys falls through to the generic loop so no data is silently hidden -#}
+    {%- if v.name is defined and v.value is defined and v|length == 2 -%}<strong>{{ v.name }}:</strong> {{ render_val(v.value) }}
+    {%- elif v.title is defined and v.description is defined and v|length == 2 -%}<strong>{{ v.title }}:</strong> {{ render_val(v.description) }}
+    {%- elif v.text is defined and v|length == 1 -%}{{ render_val(v.text) }}
+    {%- elif v.fact is defined and v|length == 1 -%}{{ render_val(v.fact) }}
+    {%- elif v.value is defined and v|length == 1 -%}{{ render_val(v.value) }}
+    {%- elif v.description is defined and v|length == 1 -%}{{ render_val(v.description) }}
+    {%- else -%}{% for k, val in v.items() %}<strong>{{ k|replace('_',' ')|title }}:</strong> {{ render_val(val) }}{% if not loop.last %}; {% endif %}{% endfor %}
     {%- endif -%}
   {%- elif v is iterable -%}{% for item in v %}{{ render_val(item) }}{% if not loop.last %} · {% endif %}{% endfor %}
   {%- else -%}{{ v }}
@@ -122,7 +128,7 @@
         </div>
         <div class="rail-card-body">
           {% if data and data.summary %}
-            <div class="summary-quote">{{ data.summary }}</div>
+            <div class="summary-quote">{{ render_val(data.summary) }}</div>
           {% endif %}
 
           <div style="display: flex; flex-direction: column; gap: 14px;">
