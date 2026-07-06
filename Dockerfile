@@ -37,4 +37,10 @@ RUN mkdir -p /app/data && chown -R app:app /app
 EXPOSE 5000
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["python", "app.py"]
+# IMPORTANT: exactly 1 worker — the live job/mission trace is in-process memory
+# (jobs.py _store), so multiple workers would split state. gthread keeps the
+# arbiter heartbeat off request threads, so long-lived SSE streams and slow
+# crawl requests are not killed by the timeout.
+CMD ["gunicorn", "--workers", "1", "--worker-class", "gthread", "--threads", "16", \
+     "--timeout", "120", "--graceful-timeout", "30", "--bind", "0.0.0.0:5000", \
+     "--access-logfile", "-", "--error-logfile", "-", "app:app"]
