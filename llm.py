@@ -31,10 +31,7 @@ def _provider_kwargs(model: str) -> dict:
     return {"api_key": settings.cohere_api_key}
 
 
-def chat(system: str, user: str, temperature: float = 0.0,
-         max_tokens: int = 2000, tier: str = "reasoning") -> str:
-    """Return the raw assistant text. Raises on transport/LLM error."""
-    model = model_for(tier)
+def _complete(model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
     response = litellm.completion(
         model=model,
         messages=[
@@ -46,6 +43,35 @@ def chat(system: str, user: str, temperature: float = 0.0,
         **_provider_kwargs(model),
     )
     return response.choices[0].message.content or ""
+
+
+def chat_ex(system: str, user: str, temperature: float = 0.0,
+            max_tokens: int = 2000, tier: str = "reasoning",
+            allow_fallback: bool = True) -> tuple[str, str]:
+    """Return (assistant text, model that actually answered). If the 'fast'
+    tier fails (e.g. local Ollama is down), fall back once to the reasoning
+    model so brief/extraction still succeed instead of silently degrading.
+    Raises if that also fails."""
+    model = model_for(tier)
+    try:
+        return _complete(model, system, user, temperature, max_tokens), model
+    except Exception as e:  # noqa: BLE001
+        reasoning = model_for("reasoning")
+        if allow_fallback and tier == "fast" and model != reasoning:
+            print(f"[LLM] fast tier ({model}) failed ({type(e).__name__}); "
+                  f"falling back to {reasoning}", file=sys.stderr, flush=True)
+            return _complete(reasoning, system, user, temperature, max_tokens), reasoning
+        raise
+
+
+def chat(system: str, user: str, temperature: float = 0.0,
+         max_tokens: int = 2000, tier: str = "reasoning",
+         allow_fallback: bool = True) -> str:
+    """chat_ex, discarding the model name."""
+    text, _model = chat_ex(system, user, temperature=temperature,
+                           max_tokens=max_tokens, tier=tier,
+                           allow_fallback=allow_fallback)
+    return text
 
 
 def _extract_json(text: str) -> Optional[dict]:

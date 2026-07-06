@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from llm import chat, model_for
+from llm import chat_ex, model_for
 from models import Document, ExtractedData
 
 DEFAULT_PROMPT = (
@@ -43,7 +43,10 @@ def extract_from_document(
 
     try:
         # Summarization-style work -> "fast" tier (e.g. local Ollama qwen2.5:14b).
-        result_text = chat(system, user, temperature=0.0, max_tokens=2000, tier="fast")
+        # chat_ex reports which model actually answered (the fast tier falls
+        # back to the reasoning model when e.g. Ollama is down) so the stored
+        # extraction row is labeled with the true producer.
+        result_text, model = chat_ex(system, user, temperature=0.0, max_tokens=2000, tier="fast")
         print(f"[EXTRACT] Got response ({len(result_text)} chars)", file=sys.stderr, flush=True)
 
         # Try to parse as JSON, wrap in object if needed
