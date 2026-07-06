@@ -41,8 +41,11 @@ All settings come from `.env` (see `.env.example`):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `COHERE_API_KEY` | API key for the LLM extractor | *(empty — extraction will fail)* |
-| `LLM_PROVIDER` | LiteLLM model identifier | `cohere/command-a-03-2025` |
+| `COHERE_API_KEY` | API key for hosted LLM providers | *(empty — LLM calls will fail)* |
+| `LLM_PROVIDER` | Reasoning-tier model (planning, gap assessment) | `cohere/command-a-03-2025` |
+| `LLM_PROVIDER_FAST` | Fast-tier model (brief synthesis, extraction); empty → reuse reasoning model | *(empty)* |
+| `OLLAMA_API_BASE` | Ollama endpoint for `ollama/`-prefixed models | `http://host.docker.internal:11434` |
+| `QUARRY_BIND` | Host interface Docker publishes on (`127.0.0.1` = this machine only) | `127.0.0.1` |
 | `SEARCH_MAX_RESULTS` | Default result count for the search form | `5` |
 | `DB_PATH` | SQLite file path | `data/research.db` |
 | `CRAWL_TIMEOUT` | Per-page crawl timeout (ms) | `30000` |
@@ -51,6 +54,8 @@ All settings come from `.env` (see `.env.example`):
 | `FLASK_SECRET_KEY` | Override Flask session signing key. Empty → fresh random key per process start | *(empty)* |
 
 Switching LLM provider: anything LiteLLM supports works (e.g. `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`). Set the matching `*_API_KEY` env var that LiteLLM expects for that vendor.
+
+Providers can also be changed at runtime on the **Settings** page (`/settings`). Those choices persist to `data/settings.json`, apply immediately, and take precedence over `.env`. If the fast tier fails (e.g. local Ollama is down), calls automatically fall back to the reasoning model.
 
 ## Features
 
@@ -99,7 +104,7 @@ searches        one row per agent run, with job_id back-reference for trace look
 
 Designed for **single-user local use** behind a firewall. Some specifics:
 
-- **No authentication.** Anyone who can reach the port can run searches and burn your LLM API quota. Don't expose the port directly to the internet — put it behind Tailscale, a reverse proxy with auth, or rebind `FLASK_HOST=127.0.0.1` for localhost-only.
+- **No authentication.** Anyone who can reach the port can run searches and burn your LLM API quota. Docker publishes on `127.0.0.1` by default (`QUARRY_BIND`), so the app is reachable only from the host machine. If you widen that, put it behind Tailscale or a reverse proxy with auth — never expose it directly to the internet.
 - **`FLASK_DEBUG` defaults to `false`** in `.env.example`. Never set it to `true` on a host reachable from untrusted networks — Werkzeug's debugger console is an RCE primitive.
 - **Crawled HTML is treated as untrusted.** Page titles, URLs, and error strings are HTML-escaped before being inserted into the live agent log. Server-side templates use Jinja autoescape throughout.
 - **Inputs are bounded:** query ≤ 500 chars, extraction prompt ≤ 5000 chars, `max_results` clamped to 1–20.
@@ -115,7 +120,7 @@ Designed for **single-user local use** behind a firewall. Some specifics:
 - **DuckDuckGo rate limiting.** Heavy use can return zero results temporarily; the agent surfaces this as `no search results`.
 - **Extraction context window.** Documents are truncated to ~20k chars before being sent to the LLM (see `extractor.py`).
 - **Single-user design.** The job store and "recent crawls" tracker are global module state — fine for local use, not safe for multi-user deployments.
-- **Production WSGI.** `app.py` uses Flask's dev server. For real deployment, swap the `CMD` for `gunicorn` or similar.
+- **Production WSGI.** The Docker image runs gunicorn (1 worker × 16 threads). The worker count must stay at 1 — the live crawl/mission trace is held in process memory, so multiple workers would split state. `python app.py` still uses Flask's dev server for local development.
 
 ## License
 

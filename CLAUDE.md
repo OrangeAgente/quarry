@@ -90,7 +90,10 @@ runs a **Mission** against a question using an intelligence-collection loop:
   (`ollama/`, `ollama_chat/`) get `ollama_api_base` and no key; hosted providers
   get `cohere_api_key`. A local Ollama is reachable from the container at
   `http://host.docker.internal:11434` on Docker Desktop. `model_for(tier)`
-  resolves the id (used by `extractor` to record which model ran).
+  resolves the id. **Fast-tier calls auto-fall back to the reasoning model** on
+  provider failure (e.g. Ollama down); `chat_ex` returns
+  `(text, model_that_actually_answered)` and `extractor` records that true
+  producer on each extraction row.
 - **The mission view** (`templates/mission.html`) polls `GET /api/mission/<id>`
   (~1.2s); it updates the requirements matrix live and **reloads on status
   change** so the server re-renders the approve card / brief rather than
@@ -123,10 +126,13 @@ id-reuse, the join-table queries, and FTS consistency against a temp SQLite file
 
 ## Config
 
-All settings come from `.env` via Pydantic Settings (`config.py`). The singleton `settings` is imported across modules. Key vars: `COHERE_API_KEY`, `LLM_PROVIDER`, `DB_PATH` (default `data/research.db`), `CRAWL_TIMEOUT` (ms), `FLASK_HOST/PORT/DEBUG`, `FLASK_SECRET_KEY`. Never set `FLASK_DEBUG=true` on a network-reachable host (Werkzeug console is an RCE primitive).
+All settings come from `.env` via Pydantic Settings (`config.py`). The singleton `settings` is imported across modules. Key vars: `COHERE_API_KEY`, `LLM_PROVIDER`, `LLM_PROVIDER_FAST`, `OLLAMA_API_BASE`, `DB_PATH` (default `data/research.db`), `CRAWL_TIMEOUT` (ms), `FLASK_HOST/PORT/DEBUG`, `FLASK_SECRET_KEY`, `QUARRY_BIND` (compose-level publish interface). Never set `FLASK_DEBUG=true` on a network-reachable host (Werkzeug console is an RCE primitive).
+
+**UI-editable overrides:** the Settings page (`/settings`) persists `llm_provider`, `llm_provider_fast`, `ollama_api_base`, `cohere_api_key`, and `search_max_results` to `data/settings.json` (`config.save_overrides`), which is layered over `.env` at import (`load_overrides`) and mutated live on save — **`settings.json` wins over `.env`** for those keys. `known_models()` accumulates every model id ever saved so the Settings dropdowns never lose a previously used value.
 
 ## Deployment notes
 
-- App uses Flask's **dev server** (`app.run` in `app.py:307`) — swap for gunicorn/WSGI for production.
+- Docker runs **gunicorn with exactly 1 worker** (× 16 gthread threads). Keep `--workers 1`: the live job/mission trace is module-global memory (`jobs._store`), so >1 worker splits state. gthread is required so long-lived SSE streams aren't killed by the worker timeout. `python app.py` remains the Flask dev server for local dev.
+- Compose publishes on **`127.0.0.1` by default** (`QUARRY_BIND`) because the app has no auth; a healthcheck hits `/` every 30s.
 - This is a **single-user design**: the global job store and recent-crawls tracker are not safe for concurrent users.
 - Docker: `entrypoint.sh` runs as root only to `chown` the bind-mounted `data/`, then drops to the non-root `app` user (UID 1000) via `gosu`. The Dockerfile installs Chromium OS deps as root (`playwright install-deps`) *before* downloading the browser binary as `app`, because `crawl4ai-setup`'s own dep step needs root and fails silently otherwise.
