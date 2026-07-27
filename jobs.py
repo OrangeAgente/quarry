@@ -47,6 +47,11 @@ class Job:
     document_ids: list = field(default_factory=list)
     error: Optional[str] = None
     done: bool = False
+    # Mission-only: budget telemetry + cooperative cancellation, read by the
+    # mission page's telemetry strip.
+    pass_num: int = 0
+    sources_used: int = 0
+    cancel_requested: bool = False
 
 
 _store: dict[str, Job] = {}
@@ -174,6 +179,24 @@ def set_document_ids(job_id: str, ids: list[str]) -> None:
         j.document_ids = ids
 
 
+def request_cancel(job_id: str) -> bool:
+    """Ask a running mission to stop at the next pass boundary. Cooperative —
+    agent_runner checks this between passes, so the current pass finishes and
+    the brief is still synthesized from whatever was collected."""
+    with _lock:
+        j = _store.get(job_id)
+        if not j or j.done:
+            return False
+        j.cancel_requested = True
+        return True
+
+
+def is_cancelled(job_id: str) -> bool:
+    with _lock:
+        j = _store.get(job_id)
+        return bool(j and j.cancel_requested)
+
+
 def job_state(job_id: str) -> Optional[dict]:
     with _lock:
         j = _store.get(job_id)
@@ -195,6 +218,9 @@ def job_state(job_id: str) -> Optional[dict]:
             "done": j.done,
             "error": j.error,
             "document_ids": list(j.document_ids),
+            "pass_num": j.pass_num,
+            "sources_used": j.sources_used,
+            "cancel_requested": j.cancel_requested,
         }
 
 

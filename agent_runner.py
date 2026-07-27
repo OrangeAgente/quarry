@@ -132,7 +132,13 @@ async def _run_collection(mission_id: str) -> None:
         pending = [r for r in reqs if r.status == "pending"]
         if not pending:
             break
+        # Cooperative stop: requested from the mission page between passes, so
+        # the collected sources are still written up into a brief.
+        if job_id and jobs.is_cancelled(job_id):
+            jobs.add_log(job_id, "warn", "stop requested — finishing after this pass")
+            break
         if job_id:
+            jobs.update_job(job_id, pass_num=pass_num)
             jobs.add_log(job_id, "info",
                          f"pass <em>{pass_num}</em> · {len(pending)} open requirements")
 
@@ -175,6 +181,8 @@ async def _run_collection(mission_id: str) -> None:
                     doc_id = await upsert_document(doc)
                     collected[doc.url] = doc_id
                     await link_mission_document(mission_id, req.id, doc_id)
+                if job_id:
+                    jobs.update_job(job_id, sources_used=len(collected))
 
             # Link any already-collected URLs that resurfaced for this requirement,
             # so assessment sees the full picture.
@@ -190,6 +198,8 @@ async def _run_collection(mission_id: str) -> None:
                 await update_requirement(
                     req.id, status="satisfied", attempts=attempts,
                     satisfied_doc_ids_json=json.dumps([d.id for d in req_docs]),
+                    assessment_missing="",
+                    assessment_confidence=assessment.confidence,
                 )
                 if job_id:
                     jobs.add_log(job_id, "ok",
@@ -200,6 +210,8 @@ async def _run_collection(mission_id: str) -> None:
                 await update_requirement(
                     req.id, status=status, attempts=attempts,
                     next_queries_json=json.dumps(next_q),
+                    assessment_missing=assessment.missing,
+                    assessment_confidence=assessment.confidence,
                 )
                 if job_id:
                     label = "unmet (capped)" if status == "unmet" else "gap remains"

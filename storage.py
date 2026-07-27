@@ -112,9 +112,19 @@ async def init_db():
                 status TEXT NOT NULL DEFAULT 'pending',
                 attempts INTEGER DEFAULT 0,
                 next_queries_json TEXT,
-                satisfied_doc_ids_json TEXT
+                satisfied_doc_ids_json TEXT,
+                assessment_missing TEXT,
+                assessment_confidence TEXT
             )
         """)
+        # The assessor's gap reasoning was previously computed and discarded;
+        # these columns persist it for the requirements matrix. ALTERs are for
+        # DBs created before the columns existed.
+        for _col in ("assessment_missing", "assessment_confidence"):
+            try:
+                await db.execute(f"ALTER TABLE requirements ADD COLUMN {_col} TEXT")
+            except Exception:
+                pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS mission_documents (
                 mission_id TEXT NOT NULL,
@@ -542,6 +552,37 @@ async def list_missions(limit: int = 50) -> list[Mission]:
             return [Mission(**dict(row)) for row in rows]
 
 
+async def get_agent_track_records() -> dict[str, dict]:
+    """Per-agent stats for the agents index: missions run, % of requirements
+    satisfied, distinct sources gathered, and last run. Keyed by agent id."""
+    db_path = get_db_path()
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT m.agent_id AS agent_id,
+                      COUNT(DISTINCT m.id) AS missions,
+                      MAX(m.created_at) AS last_run,
+                      (SELECT COUNT(*) FROM requirements r
+                       JOIN missions m2 ON m2.id = r.mission_id
+                       WHERE m2.agent_id = m.agent_id) AS req_total,
+                      (SELECT COUNT(*) FROM requirements r
+                       JOIN missions m2 ON m2.id = r.mission_id
+                       WHERE m2.agent_id = m.agent_id AND r.status = 'satisfied') AS req_satisfied,
+                      (SELECT COUNT(DISTINCT md.document_id) FROM mission_documents md
+                       JOIN missions m3 ON m3.id = md.mission_id
+                       WHERE m3.agent_id = m.agent_id) AS sources
+               FROM missions m GROUP BY m.agent_id"""
+        ) as cur:
+            rows = await cur.fetchall()
+    out = {}
+    for r in rows:
+        d = dict(r)
+        total = d.get("req_total") or 0
+        d["req_pct"] = round(100 * (d.get("req_satisfied") or 0) / total) if total else None
+        out[d["agent_id"]] = d
+    return out
+
+
 async def get_missions_enriched(limit: int = 50) -> list[dict]:
     """Missions with requirement coverage + document counts, for the History
     timeline and the Library collection selector."""
@@ -553,6 +594,8 @@ async def get_missions_enriched(limit: int = 50) -> list[dict]:
                       (SELECT COUNT(*) FROM requirements r WHERE r.mission_id = m.id) AS req_total,
                       (SELECT COUNT(*) FROM requirements r WHERE r.mission_id = m.id
                        AND r.status = 'satisfied') AS req_satisfied,
+                      (SELECT COUNT(*) FROM requirements r WHERE r.mission_id = m.id
+                       AND r.status = 'unmet') AS req_unmet,
                       (SELECT COUNT(DISTINCT md.document_id) FROM mission_documents md
                        WHERE md.mission_id = m.id) AS doc_count
                FROM missions m ORDER BY m.created_at DESC LIMIT ?""",
@@ -601,11 +644,13 @@ async def insert_requirement(req: Requirement) -> bool:
         await db.execute(
             """INSERT INTO requirements
                (id, mission_id, title, description, rationale, status,
-                attempts, next_queries_json, satisfied_doc_ids_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                attempts, next_queries_json, satisfied_doc_ids_json,
+                assessment_missing, assessment_confidence)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (req.id, req.mission_id, req.title, req.description, req.rationale,
              req.status, req.attempts, req.next_queries_json,
-             req.satisfied_doc_ids_json),
+             req.satisfied_doc_ids_json, req.assessment_missing,
+             req.assessment_confidence),
         )
         await db.commit()
         return True
@@ -621,6 +666,16 @@ async def update_requirement(req_id: str, **fields) -> None:
             f"UPDATE requirements SET {cols} WHERE id = ?",
             (*fields.values(), req_id),
         )
+        await db.commit()
+
+
+async def delete_requirement(req_id: str) -> None:
+    """Drop a requirement (used when the user cuts one from the plan at the
+    approval gate). Also clears its document links so no orphan rows remain."""
+    db_path = get_db_path()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("DELETE FROM mission_documents WHERE requirement_id = ?", (req_id,))
+        await db.execute("DELETE FROM requirements WHERE id = ?", (req_id,))
         await db.commit()
 
 

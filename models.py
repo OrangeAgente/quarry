@@ -34,6 +34,9 @@ class Requirement(BaseModel):
     attempts: int = 0
     next_queries_json: Optional[str] = None  # JSON list[str] of queries to run next
     satisfied_doc_ids_json: Optional[str] = None  # JSON list[str]
+    # The assessor's own reasoning about this requirement, surfaced in the UI.
+    assessment_missing: Optional[str] = None   # what the sources still lack
+    assessment_confidence: Optional[str] = None  # high | medium | low
 
 
 class Mission(BaseModel):
