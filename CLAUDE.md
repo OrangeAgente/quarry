@@ -94,10 +94,30 @@ runs a **Mission** against a question using an intelligence-collection loop:
   provider failure (e.g. Ollama down); `chat_ex` returns
   `(text, model_that_actually_answered)` and `extractor` records that true
   producer on each extraction row.
-- **The mission view** (`templates/mission.html`) polls `GET /api/mission/<id>`
-  (~1.2s); it updates the requirements matrix live and **reloads on status
-  change** so the server re-renders the approve card / brief rather than
-  duplicating that rendering in JS.
+- **The mission view** (`templates/mission.html`) renders three states from
+  `mission.status` — editable **approval gate**, **requirements matrix**, and
+  **brief + citation-linked source rail**. It polls `GET /api/mission/<id>`
+  (~1.2s), updates the matrix/telemetry in place, and **reloads on status
+  change** so the server re-renders the gate / brief rather than duplicating
+  that rendering in JS.
+- **The approval gate is editable.** The DOM *is* the plan; on submit JS
+  serializes titles, per-requirement queries, and dropped ids into a
+  `plan_json` field. `POST /missions/<id>/approve` applies those edits
+  (update/insert/`delete_requirement`) before `start_collection`. With JS off
+  the field is empty and the plan is approved as drafted.
+- **The assessor's reasoning is persisted, not discarded**: `assessment_missing`
+  and `assessment_confidence` columns on `requirements` feed the matrix's gap /
+  satisfied callouts. This was the single biggest gap in the old UI.
+- **Citation numbering must match the brief.** `brief.ordered_sources()` is the
+  one ordering both the LLM prompt and the source rail use;
+  `brief.linkify_citations()` turns `[n]` into `.cite` controls **after**
+  `render_markdown` sanitization (it only ever injects markup built from an
+  integer it re-serializes, so the sanitizer is never weakened or bypassed).
+- **Telemetry + cooperative stop** live in the job store (`pass_num`,
+  `sources_used`, `cancel_requested`); `agent_runner` checks `jobs.is_cancelled`
+  at pass boundaries so a stop still produces a brief from what was collected.
+- **Static assets are cache-busted** by mtime (`@app.url_defaults`), because a
+  deploy otherwise leaves users on a stale `style.css`.
 - **Phase 2 (not yet built):** scheduling via APScheduler + delta "what's new
   since last run" briefs. The delta plumbing already exists
   (`get_latest_finished_mission`, `get_prior_mission_urls`, the `new_urls` arg to
@@ -116,6 +136,15 @@ PYTHONPATH=.:tests/stubs python -m pytest -q tests
 `test_agent_planner` / `test_agent_assessor` / `test_brief` monkeypatch the LLM
 calls; `test_storage_smoke` exercises the real schema, `upsert_document`
 id-reuse, the join-table queries, and FTS consistency against a temp SQLite file.
+`test_templates_parse` parses every Jinja template, and `test_style_css` guards
+the stylesheet against corruption — a stray shell line once landed in it, and
+browsers silently drop **every rule after** a malformed one, so the file still
+"contains" styles that never load.
+
+`tests/qa_harness.py`, `qa_mission_ui.py`, and `qa_ollama.py` are end-to-end
+drivers (not pytest): copy one into the running container and execute it there,
+e.g. `docker compose cp ./tests/qa_mission_ui.py web-researcher:/tmp/x.py &&
+docker compose exec -T web-researcher python /tmp/x.py`.
 
 ## Security-relevant invariants (preserve these)
 
