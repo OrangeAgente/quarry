@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import json
+import os
+import re
 import secrets
 import threading
 import time
@@ -23,14 +25,18 @@ from storage import (
     insert_mission, update_mission, get_mission, list_missions,
     get_requirements_for_mission, get_mission_documents,
     get_missions_enriched, get_distinct_search_queries,
+    insert_requirement, update_requirement, delete_requirement,
+    get_requirement_documents, get_agent_track_records,
 )
 from jobs import (
     create_job, get_job, job_state, run_job_in_background,
     get_sidebar_jobs, get_in_memory_job_ids, create_mission_job,
+    request_cancel,
 )
 from agent_runner import start_planning, start_collection
+from brief import ordered_sources, linkify_citations
 from markdown_render import render_markdown, to_plain_text
-from models import SearchRecord, Agent, Mission
+from models import SearchRecord, Agent, Mission, Requirement
 from prompt_templates import build_persona
 
 app = Flask(__name__)
@@ -80,6 +86,18 @@ def run_async(coro):
             return loop.run_until_complete(coro)
     except RuntimeError:
         return asyncio.run(coro)
+
+
+@app.url_defaults
+def _static_cache_bust(endpoint, values):
+    """Stamp static URLs with the file's mtime so a deploy can't leave users on
+    a cached stylesheet (CSS changes otherwise need a manual hard refresh)."""
+    if endpoint == "static" and "filename" in values:
+        try:
+            values["v"] = int(os.stat(
+                os.path.join(app.static_folder, values["filename"])).st_mtime)
+        except OSError:
+            pass
 
 
 @app.before_request
@@ -377,7 +395,9 @@ def documents_list():
 @app.route("/agents")
 def agents_list():
     agents = run_async(list_agents())
-    return render_template("agents.html", agents=agents, active_page="agents")
+    return render_template("agents.html", agents=agents,
+                           records=run_async(get_agent_track_records()),
+                           active_page="agents")
 
 
 @app.route("/agents/new", methods=["GET", "POST"])
@@ -509,10 +529,20 @@ def agent_run(agent_id):
 
 @app.route("/missions")
 def missions_list():
-    missions = run_async(list_missions())
+    # Grouped, not one flat list: a mission awaiting approval is a call to
+    # action and must not be buried under finished ones.
+    missions = run_async(get_missions_enriched())
     agents = {a.id: a for a in run_async(list_agents())}
-    return render_template("missions.html", missions=missions, agents=agents,
-                           active_page="missions")
+    groups = {"needs_you": [], "running": [], "finished": []}
+    for m in missions:
+        if m["status"] == "awaiting_approval":
+            groups["needs_you"].append(m)
+        elif m["status"] in ("planning", "collecting", "synthesizing"):
+            groups["running"].append(m)
+        else:
+            groups["finished"].append(m)
+    return render_template("missions.html", groups=groups, agents=agents,
+                           total=len(missions), active_page="missions")
 
 
 @app.route("/missions/<mission_id>")
@@ -524,12 +554,46 @@ def mission_view(mission_id):
     requirements = run_async(get_requirements_for_mission(mission_id))
     documents = run_async(get_mission_documents(mission_id))
     agent = run_async(get_agent(mission.agent_id))
-    brief_html = render_markdown(mission.brief_markdown) if mission.brief_markdown else ""
     ext_ids = run_async(get_doc_ids_with_extractions())
+
+    # Number the sources exactly as brief.py numbered them for the LLM, so the
+    # [n] markers in the brief bind to the right rail entry.
+    numbered = list(enumerate(ordered_sources(documents), 1))
+    doc_number = {d.id: n for n, d in numbered}
+
+    # Sanitize first (never bypassed), then turn [n] into citation controls.
+    brief_html = ""
+    if mission.brief_markdown:
+        brief_html = linkify_citations(
+            render_markdown(mission.brief_markdown), len(numbered))
+
+    # Sources per requirement, carrying their citation number where they have
+    # one, plus the queries the agent ran/will run (stored as JSON).
+    req_sources, req_queries = {}, {}
+    for r in requirements:
+        req_sources[r.id] = [
+            {"doc": d, "n": doc_number.get(d.id)}
+            for d in run_async(get_requirement_documents(mission_id, r.id))
+        ]
+        try:
+            req_queries[r.id] = json.loads(r.next_queries_json or "[]")
+        except json.JSONDecodeError:
+            req_queries[r.id] = []
+
+    budget = {}
+    try:
+        budget = json.loads(mission.budget_json or "{}")
+    except json.JSONDecodeError:
+        budget = {}
+
+    live_state = job_state(mission.job_id) if mission.job_id else None
     return render_template(
         "mission.html", mission=mission, agent=agent,
         requirements=requirements, documents=documents,
-        brief_html=brief_html, ext_ids=ext_ids,
+        numbered_sources=numbered, req_sources=req_sources,
+        req_queries=req_queries,
+        brief_html=brief_html, ext_ids=ext_ids, budget=budget,
+        live_state=live_state,
         live=mission.job_id in get_in_memory_job_ids(),
         active_page="missions",
     )
@@ -544,12 +608,91 @@ def mission_approve(mission_id):
     if mission.status != "awaiting_approval":
         flash("This mission is not awaiting approval.", "info")
         return redirect(url_for("mission_view", mission_id=mission_id))
+
+    # The gate lets the user reword requirements, cut them, and edit the seeded
+    # queries. JS serializes that into plan_json; with JS off the field is empty
+    # and we approve the plan as drafted.
+    dropped = 0
+    raw_plan = request.form.get("plan_json", "").strip()
+    if raw_plan:
+        try:
+            edits = json.loads(raw_plan)
+        except json.JSONDecodeError:
+            edits = []
+        existing = {r.id: r for r in run_async(get_requirements_for_mission(mission_id))}
+        for item in edits if isinstance(edits, list) else []:
+            if not isinstance(item, dict):
+                continue
+            rid = item.get("id")
+            if item.get("dropped"):
+                if rid in existing:
+                    run_async(delete_requirement(rid))
+                    dropped += 1
+                continue
+            title = (item.get("title") or "").strip()[:200]
+            queries = [q.strip()[:300] for q in (item.get("queries") or [])
+                       if isinstance(q, str) and q.strip()][:8]
+            if rid in existing:
+                fields = {}
+                if title:
+                    fields["title"] = title
+                if queries:
+                    fields["next_queries_json"] = json.dumps(queries)
+                if fields:
+                    run_async(update_requirement(rid, **fields))
+            elif title:
+                # A requirement the user added at the gate.
+                run_async(insert_requirement(Requirement(
+                    id=str(uuid.uuid4()), mission_id=mission_id, title=title,
+                    description=(item.get("description") or "").strip()[:1000],
+                    rationale="Added by you at the approval gate.",
+                    status="pending", attempts=0,
+                    next_queries_json=json.dumps(queries or [title]),
+                )))
+
+    remaining = run_async(get_requirements_for_mission(mission_id))
+    if not remaining:
+        flash("A plan needs at least one requirement — nothing was approved.", "error")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+
     # Flip status before spawning the worker so the redirect renders the
     # collecting view immediately (avoids briefly re-showing the approve card).
     run_async(update_mission(mission_id, status="collecting"))
     start_collection(mission_id)
-    flash("Collection plan approved — the agent is now collecting.", "success")
+    msg = f"Plan approved — collecting against {len(remaining)} requirements."
+    if dropped:
+        msg += f" {dropped} dropped."
+    flash(msg, "success")
     return redirect(url_for("mission_view", mission_id=mission_id))
+
+
+@app.route("/missions/<mission_id>/stop", methods=["POST"])
+def mission_stop(mission_id):
+    """Cooperative stop: the runner finishes the current pass, then synthesizes
+    a brief from whatever was collected."""
+    mission = run_async(get_mission(mission_id))
+    if not mission:
+        flash("Mission not found.", "error")
+        return redirect(url_for("missions_list"))
+    if mission.job_id and request_cancel(mission.job_id):
+        flash("Stopping after the current pass — the brief will still be written.", "info")
+    else:
+        flash("This mission is not running.", "info")
+    return redirect(url_for("mission_view", mission_id=mission_id))
+
+
+@app.route("/missions/<mission_id>/brief.md")
+def mission_brief_export(mission_id):
+    mission = run_async(get_mission(mission_id))
+    if not mission or not mission.brief_markdown:
+        flash("No brief to export yet.", "info")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+    slug = re.sub(r"[^a-z0-9]+", "-", (mission.question or "brief").lower()).strip("-")[:60]
+    return Response(
+        mission.brief_markdown,
+        mimetype="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{slug or "brief"}.md"'},
+    )
 
 
 @app.route("/api/mission/<mission_id>")
@@ -565,9 +708,15 @@ def api_mission(mission_id):
         "error": mission.error,
         "has_brief": bool(mission.brief_markdown),
         "requirements": [
-            {"title": r.title, "status": r.status, "attempts": r.attempts}
+            {"id": r.id, "title": r.title, "status": r.status,
+             "attempts": r.attempts,
+             "missing": r.assessment_missing or "",
+             "confidence": r.assessment_confidence or ""}
             for r in requirements
         ],
+        "satisfied": sum(1 for r in requirements if r.status == "satisfied"),
+        "unmet": sum(1 for r in requirements if r.status == "unmet"),
+        "total": len(requirements),
         "done": mission.status in ("done", "error"),
     }
     if mission.job_id:
@@ -576,6 +725,8 @@ def api_mission(mission_id):
             state["trace"] = {
                 "stage": js["stage"], "elapsed": js["elapsed"],
                 "log": js["log"], "urls": js["urls"],
+                "pass_num": js["pass_num"], "sources_used": js["sources_used"],
+                "cancel_requested": js["cancel_requested"],
             }
     return state
 
