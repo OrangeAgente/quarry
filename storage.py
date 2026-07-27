@@ -1,6 +1,7 @@
 import os
 import json
 import aiosqlite
+from datetime import datetime, timezone
 from typing import Optional
 from models import Document, ExtractedData, SearchRecord, Agent, Mission, Requirement
 
@@ -114,15 +115,18 @@ async def init_db():
                 next_queries_json TEXT,
                 satisfied_doc_ids_json TEXT,
                 assessment_missing TEXT,
-                assessment_confidence TEXT
+                assessment_confidence TEXT,
+                accepted_by_user INTEGER DEFAULT 0
             )
         """)
         # The assessor's gap reasoning was previously computed and discarded;
         # these columns persist it for the requirements matrix. ALTERs are for
         # DBs created before the columns existed.
-        for _col in ("assessment_missing", "assessment_confidence"):
+        for _col, _type in (("assessment_missing", "TEXT"),
+                            ("assessment_confidence", "TEXT"),
+                            ("accepted_by_user", "INTEGER DEFAULT 0")):
             try:
-                await db.execute(f"ALTER TABLE requirements ADD COLUMN {_col} TEXT")
+                await db.execute(f"ALTER TABLE requirements ADD COLUMN {_col} {_type}")
             except Exception:
                 pass
         await db.execute("""
@@ -552,6 +556,39 @@ async def list_missions(limit: int = 50) -> list[Mission]:
             return [Mission(**dict(row)) for row in rows]
 
 
+async def reconcile_interrupted_missions() -> int:
+    """A mission's worker lives in a daemon thread, so a restart or crash kills
+    it while the DB row still says it is running — the mission view then polls a
+    status that will never change. Called once at startup, when no worker can be
+    running yet, so anything in an in-flight state is provably orphaned.
+
+    `awaiting_approval` is deliberately excluded: it is a legitimate resting
+    state that waits on the user, not on a thread.
+    """
+    stuck = ("planning", "collecting", "synthesizing")
+    note = "Interrupted by a server restart — the collection worker did not survive."
+    db_path = get_db_path()
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            f"""UPDATE missions SET status = 'error', error = ?, finished_at = ?
+                WHERE status IN ({','.join('?' * len(stuck))})""",
+            (note, datetime.now(timezone.utc).isoformat(), *stuck),
+        )
+        await db.commit()
+        return cur.rowcount or 0
+
+
+async def delete_mission(mission_id: str) -> None:
+    """Delete a mission and its plan. Crawled documents are left in the library
+    — they are shared with searches and other missions."""
+    db_path = get_db_path()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("DELETE FROM mission_documents WHERE mission_id = ?", (mission_id,))
+        await db.execute("DELETE FROM requirements WHERE mission_id = ?", (mission_id,))
+        await db.execute("DELETE FROM missions WHERE id = ?", (mission_id,))
+        await db.commit()
+
+
 async def get_agent_track_records() -> dict[str, dict]:
     """Per-agent stats for the agents index: missions run, % of requirements
     satisfied, distinct sources gathered, and last run. Keyed by agent id."""
@@ -645,12 +682,12 @@ async def insert_requirement(req: Requirement) -> bool:
             """INSERT INTO requirements
                (id, mission_id, title, description, rationale, status,
                 attempts, next_queries_json, satisfied_doc_ids_json,
-                assessment_missing, assessment_confidence)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                assessment_missing, assessment_confidence, accepted_by_user)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (req.id, req.mission_id, req.title, req.description, req.rationale,
              req.status, req.attempts, req.next_queries_json,
              req.satisfied_doc_ids_json, req.assessment_missing,
-             req.assessment_confidence),
+             req.assessment_confidence, req.accepted_by_user),
         )
         await db.commit()
         return True

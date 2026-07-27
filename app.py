@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import threading
 import time
 import uuid
@@ -27,6 +28,7 @@ from storage import (
     get_missions_enriched, get_distinct_search_queries,
     insert_requirement, update_requirement, delete_requirement,
     get_requirement_documents, get_agent_track_records,
+    reconcile_interrupted_missions, delete_mission,
 )
 from jobs import (
     create_job, get_job, job_state, run_job_in_background,
@@ -130,6 +132,13 @@ def ensure_db():
         with _init_db_lock:
             if not getattr(app, '_db_initialized', False):
                 run_async(init_db())
+                # Safe here: no collection worker can be running yet in this
+                # process, so any mission still in an in-flight state is one
+                # whose thread died with a previous process.
+                stale = run_async(reconcile_interrupted_missions())
+                if stale:
+                    print(f"[STARTUP] marked {stale} interrupted mission(s) as failed",
+                          file=sys.stderr, flush=True)
                 app._db_initialized = True
 
 
@@ -678,6 +687,93 @@ def mission_stop(mission_id):
         flash("Stopping after the current pass — the brief will still be written.", "info")
     else:
         flash("This mission is not running.", "info")
+    return redirect(url_for("mission_view", mission_id=mission_id))
+
+
+@app.route("/missions/<mission_id>/delete", methods=["POST"])
+def mission_delete(mission_id):
+    mission = run_async(get_mission(mission_id))
+    if not mission:
+        flash("Mission not found.", "error")
+        return redirect(url_for("missions_list"))
+    # Deleting a mission out from under its worker would leave the thread
+    # writing rows for a mission that no longer exists.
+    if mission.status in ("planning", "collecting", "synthesizing") \
+            and mission.job_id in get_in_memory_job_ids():
+        flash("This mission is still running — stop it first, then delete.", "error")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+    run_async(delete_mission(mission_id))
+    flash("Mission deleted. Its collected sources are still in the Library.", "success")
+    return redirect(url_for("missions_list"))
+
+
+@app.route("/missions/<mission_id>/requirements/<req_id>/retask", methods=["POST"])
+def requirement_retask(mission_id, req_id):
+    """Reopen a requirement the agent gave up on, with a query the user
+    supplies, and put the mission back to work on it."""
+    mission = run_async(get_mission(mission_id))
+    if not mission:
+        flash("Mission not found.", "error")
+        return redirect(url_for("missions_list"))
+    if mission.status in ("planning", "collecting", "synthesizing"):
+        flash("The agent is still working — wait for it to finish before re-tasking.", "info")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+
+    req = next((r for r in run_async(get_requirements_for_mission(mission_id))
+                if r.id == req_id), None)
+    if not req:
+        flash("Requirement not found.", "error")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+
+    query = request.form.get("query", "").strip()[:300]
+    if not query:
+        flash("Enter a search query to re-task with.", "error")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+
+    try:
+        queries = json.loads(req.next_queries_json or "[]")
+    except json.JSONDecodeError:
+        queries = []
+    if query not in queries:
+        queries.append(query)
+
+    # A fresh attempt budget — the user explicitly asked for another round.
+    run_async(update_requirement(
+        req_id, status="pending", attempts=0, accepted_by_user=0,
+        next_queries_json=json.dumps(queries[-8:]),
+        assessment_missing="", assessment_confidence="",
+    ))
+
+    # The old live trace is gone once the process restarts, so give the re-run
+    # its own job and point the mission at it.
+    budget = {}
+    try:
+        budget = json.loads(mission.budget_json or "{}")
+    except json.JSONDecodeError:
+        pass
+    job_id = create_mission_job(mission.question, int(budget.get("max_sources", 30)))
+    run_async(update_mission(mission_id, status="collecting", job_id=job_id, error=None))
+    start_collection(mission_id)
+    flash(f"Re-tasking “{req.title}” with a fresh attempt budget.", "success")
+    return redirect(url_for("mission_view", mission_id=mission_id))
+
+
+@app.route("/missions/<mission_id>/requirements/<req_id>/accept", methods=["POST"])
+def requirement_accept(mission_id, req_id):
+    """Override the assessor and accept a requirement's coverage as-is. Recorded
+    as a user decision so the UI never implies the assessor was satisfied."""
+    mission = run_async(get_mission(mission_id))
+    if not mission:
+        flash("Mission not found.", "error")
+        return redirect(url_for("missions_list"))
+    req = next((r for r in run_async(get_requirements_for_mission(mission_id))
+                if r.id == req_id), None)
+    if not req:
+        flash("Requirement not found.", "error")
+        return redirect(url_for("mission_view", mission_id=mission_id))
+    run_async(update_requirement(req_id, status="satisfied", accepted_by_user=1))
+    flash(f"“{req.title}” marked satisfied — recorded as your decision, not the assessor's.",
+          "success")
     return redirect(url_for("mission_view", mission_id=mission_id))
 
 

@@ -37,6 +37,9 @@ class Requirement(BaseModel):
     # The assessor's own reasoning about this requirement, surfaced in the UI.
     assessment_missing: Optional[str] = None   # what the sources still lack
     assessment_confidence: Optional[str] = None  # high | medium | low
+    # Set when the user overrides the assessor and accepts a gap as-is, so the
+    # UI can say so instead of implying the assessor was satisfied.
+    accepted_by_user: int = 0
 
 
 class Mission(BaseModel):
