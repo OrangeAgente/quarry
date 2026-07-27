@@ -1,38 +1,97 @@
 {% extends "base.html" %}
 {% block title %}Missions — Quarry{% endblock %}
-{% block crumbs %}
-  <span class="sep">/</span><span class="cur">Missions</span>
-{% endblock %}
+{% block crumbs %}<span class="sep">/</span><span class="cur">Missions</span>{% endblock %}
+
+{% set STATUS_LABEL = {
+  'planning': 'planning', 'awaiting_approval': 'needs your approval',
+  'collecting': 'collecting', 'synthesizing': 'writing brief',
+  'done': 'complete', 'error': 'failed'} %}
+{% set STATUS_CLASS = {
+  'planning': 'pill-planning', 'awaiting_approval': 'pill-approval',
+  'collecting': 'pill-collecting', 'synthesizing': 'pill-synthesizing',
+  'done': 'pill-done', 'error': 'pill-error'} %}
+
+{% macro mrow(m) %}
+  {% set sat = m.req_satisfied or 0 %}
+  {% set unmet = m.req_unmet or 0 %}
+  {% set total = m.req_total or 0 %}
+  {% set pending = total - sat - unmet %}
+  <a class="mrow" href="/missions/{{ m.id }}">
+    <span class="pill {{ STATUS_CLASS.get(m.status, '') }}">
+      {% if m.status in ('planning', 'collecting', 'synthesizing') %}<span class="dot"></span>{% endif %}
+      {{ STATUS_LABEL.get(m.status, m.status) }}
+    </span>
+    <span style="min-width:0">
+      <span class="mrow-q" style="display:block">{{ m.question }}</span>
+      <span class="mrow-m">
+        <span>{{ agents[m.agent_id].name if m.agent_id in agents else 'agent' }}</span>
+        <span>{{ m.doc_count or 0 }} sources</span>
+        <span>{{ m.created_at[:16] | replace('T', ' ') }}</span>
+      </span>
+    </span>
+    <span class="mrow-cov">
+      {% if total %}
+      <span class="coverage-compact" title="{{ sat }} satisfied · {{ unmet }} unmet · {{ pending }} open">
+        <span class="coverage">
+          {% if sat %}<span class="cov-satisfied" style="flex-grow:{{ sat }}"></span>{% endif %}
+          {% if unmet %}<span class="cov-unmet" style="flex-grow:{{ unmet }}"></span>{% endif %}
+          {% if pending %}<span class="cov-pending" style="flex-grow:{{ pending }}"></span>{% endif %}
+        </span>
+        <span class="coverage-num">{{ sat }}/{{ total }}</span>
+      </span>
+      {% endif %}
+    </span>
+    <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:var(--fg-subtle)"><path d="m6 4 4 4-4 4"/></svg>
+  </a>
+{% endmacro %}
 
 {% block content %}
 <div class="page">
-  <h1 style="margin:0 0 16px;">Missions</h1>
+  <div style="margin-bottom:20px">
+    <h1 class="page-title">Missions</h1>
+    <p class="page-sub">Every agent run, grouped so the ones waiting on you stay on top.</p>
+  </div>
 
-  {% if not missions %}
-    <div class="card" style="padding:32px;text-align:center;color:var(--fg-subtle);">
-      No missions yet. Run an <a href="/agents">agent</a> to start one.
+  {% if not total %}
+    <div class="empty-state">
+      <div class="title">No missions yet.</div>
+      <div>Run an <a href="/agents" style="color:var(--accent)">agent</a> to start one.</div>
     </div>
   {% else %}
-    <div style="display:grid;gap:10px;">
-      {% for m in missions %}
-      <a href="/missions/{{ m.id }}" class="card"
-         style="padding:14px 18px;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;">
-        <span class="status-badge status-{{ m.status }}">{{ m.status.replace('_',' ') }}</span>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ m.question }}</span>
-        <span class="mono" style="margin-left:auto;color:var(--fg-subtle);font-size:11px;">
-          {{ agents[m.agent_id].name if m.agent_id in agents else 'agent' }} · {{ m.created_at[:16].replace('T',' ') }}
-        </span>
-      </a>
-      {% endfor %}
+
+    {% if groups.needs_you %}
+    <div class="needs-you">
+      <div class="needs-head">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12.5h4M6.5 14.5h3M5 9.5A4 4 0 1 1 11 9.5c-.6.7-1 1.4-1 2.5H6c0-1.1-.4-1.8-1-2.5Z"/></svg>
+        <strong>Waiting on you</strong>
+        <span class="n">{{ groups.needs_you | length }} plan{{ '' if groups.needs_you | length == 1 else 's' }} to approve</span>
+      </div>
+      {% for m in groups.needs_you %}{{ mrow(m) }}{% endfor %}
     </div>
+    {% endif %}
+
+    {% if groups.running %}
+    <div style="margin-bottom:22px">
+      <div class="mgroup-k">Running now</div>
+      {% for m in groups.running %}{{ mrow(m) }}{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if groups.finished %}
+    <div>
+      <div class="mgroup-k">Finished</div>
+      {% for m in groups.finished %}{{ mrow(m) }}{% endfor %}
+    </div>
+    {% endif %}
+
   {% endif %}
 </div>
 
-<style>
-  .status-badge{font:500 11px var(--font-mono);padding:2px 8px;border-radius:999px;
-    border:1px solid var(--border);color:var(--fg-subtle);white-space:nowrap;}
-  .status-done{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
-  .status-error{color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border));}
-  .status-awaiting_approval{color:var(--fg);border-color:var(--fg-subtle);}
-</style>
+{% if groups.needs_you or groups.running %}
+<script>
+  // A mission in flight changes status server-side; refresh so the grouping
+  // (and the "waiting on you" call-out) stays truthful without a manual reload.
+  setTimeout(function () { window.location.reload(); }, 15000);
+</script>
+{% endif %}
 {% endblock %}

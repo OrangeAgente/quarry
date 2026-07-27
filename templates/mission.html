@@ -5,172 +5,597 @@
   <span class="sep">/</span><span class="cur">Mission</span>
 {% endblock %}
 
+{% set STATUS_LABEL = {
+  'planning': 'planning', 'awaiting_approval': 'needs your approval',
+  'collecting': 'collecting', 'synthesizing': 'writing brief',
+  'done': 'complete', 'error': 'failed'} %}
+{% set STATUS_CLASS = {
+  'planning': 'pill-planning', 'awaiting_approval': 'pill-approval',
+  'collecting': 'pill-collecting', 'synthesizing': 'pill-synthesizing',
+  'done': 'pill-done', 'error': 'pill-error'} %}
+
+{% set n_sat = requirements | selectattr('status', 'equalto', 'satisfied') | list | length %}
+{% set n_unmet = requirements | selectattr('status', 'equalto', 'unmet') | list | length %}
+{% set n_pending = requirements | length - n_sat - n_unmet %}
+{% set max_sources = budget.get('max_sources', 30) %}
+{% set max_passes = budget.get('max_passes', 4) %}
+{% set per_req_attempts = budget.get('per_req_attempts', 3) %}
+{% set sources_used = live_state.sources_used if live_state else documents | length %}
+
+{% macro coverage(sat, unmet, pending, compact=False) %}
+  {% set total = sat + unmet + pending %}
+  {% if compact %}
+  <div class="coverage-compact" title="{{ sat }} satisfied · {{ unmet }} unmet · {{ pending }} open">
+  {% endif %}
+    <div class="coverage" data-coverage>
+      {% if sat %}<span class="cov-satisfied" style="flex-grow:{{ sat }}"></span>{% endif %}
+      {% if unmet %}<span class="cov-unmet" style="flex-grow:{{ unmet }}"></span>{% endif %}
+      {% if pending %}<span class="cov-pending" style="flex-grow:{{ pending }}"></span>{% endif %}
+    </div>
+  {% if compact %}
+    <span class="coverage-num">{{ sat }}/{{ total }}</span>
+  </div>
+  {% else %}
+    <div class="coverage-legend">
+      <span><i style="background:var(--success)"></i><span data-cov-sat>{{ sat }}</span> satisfied</span>
+      {% if unmet %}<span><i style="background:var(--danger)"></i><span data-cov-unmet>{{ unmet }}</span> unmet</span>{% endif %}
+      {% if pending %}<span><i style="background:var(--border-strong)"></i><span data-cov-pending>{{ pending }}</span> open</span>{% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="page page-wide">
 
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
-    <span class="status-badge status-{{ mission.status }}" id="statusBadge">{{ mission.status.replace('_',' ') }}</span>
-    {% if agent %}<span class="mono" style="color:var(--fg-subtle);font-size:12px;">{{ agent.name }} · {{ agent.expertise }}</span>{% endif %}
-    <span class="mono" id="elapsed" style="margin-left:auto;color:var(--fg-subtle);font-size:12px;"></span>
-  </div>
-  <h1 style="margin:0 0 18px;font-family:var(--font-serif);font-style:italic;">{{ mission.question }}</h1>
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header class="mission-head">
+    <div class="mission-head-top">
+      <span class="pill {{ STATUS_CLASS.get(mission.status, '') }}">
+        {% if mission.status in ('planning', 'collecting', 'synthesizing') %}<span class="dot"></span>{% endif %}
+        {{ STATUS_LABEL.get(mission.status, mission.status) }}
+      </span>
+      {% if agent %}
+      <span class="mission-agent">
+        <span class="who">{{ agent.name[:1] | upper }}</span>
+        <span>{{ agent.name }}</span>
+        <span class="exp">· {{ agent.expertise }}</span>
+      </span>
+      {% endif %}
+    </div>
+    <h1 class="mission-q">{{ mission.question }}</h1>
+  </header>
 
   {% if mission.status == 'error' %}
     <div class="flash error">Mission failed: {{ mission.error }}</div>
   {% endif %}
 
-  {% if mission.status == 'awaiting_approval' %}
-  <div class="card" style="padding:20px;margin-bottom:20px;border-color:color-mix(in oklch,var(--accent) 40%,var(--border));">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-      <strong>Collection plan ready</strong>
-      <form method="post" action="/missions/{{ mission.id }}/approve" style="margin-left:auto;">
-        <button type="submit" class="btn btn-primary">Approve &amp; start collecting</button>
-      </form>
-    </div>
-    <p style="margin:0;color:var(--fg-subtle);font-size:13px;">
-      Review the {{ requirements|length }} requirements below. On approval the agent
-      collects autonomously until each is satisfied or capped.
-    </p>
-  </div>
-  {% endif %}
-
-  <!-- Requirements matrix -->
-  <div class="card" style="padding:0;margin-bottom:20px;overflow:hidden;">
-    <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
-      <strong>Collection requirements</strong>
-      <span class="mono" id="coverage" style="margin-left:auto;color:var(--fg-subtle);font-size:12px;"></span>
-    </div>
-    <div>
-      {% for r in requirements %}
-      <div class="req-row" data-idx="{{ loop.index0 }}"
-           style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;">
-        <span class="status-badge status-req-{{ r.status }}" data-req-status>{{ r.status }}</span>
-        <div style="flex:1;">
-          <div style="font-weight:500;">{{ r.title }}</div>
-          {% if r.description %}<div style="color:var(--fg-subtle);font-size:13px;margin-top:2px;">{{ r.description }}</div>{% endif %}
-        </div>
-        <span class="mono" style="color:var(--fg-subtle);font-size:11px;" data-req-attempts>{{ r.attempts }} tries</span>
+  <!-- ── Telemetry ──────────────────────────────────────────── -->
+  <div class="telemetry">
+    <div class="tele-cell">
+      <div class="tele-k">Pass</div>
+      <div class="tele-v" data-tele-pass>
+        {% if live_state and live_state.pass_num %}{{ live_state.pass_num }} <small>of {{ max_passes }}</small>{% else %}—{% endif %}
       </div>
-      {% endfor %}
-      {% if not requirements %}
-      <div style="padding:18px;color:var(--fg-subtle);">Planning… requirements will appear shortly.</div>
+    </div>
+    <div class="tele-cell">
+      <div class="tele-k">Sources used</div>
+      <div class="tele-v"><span data-tele-sources>{{ sources_used }}</span> <small>/ {{ max_sources }}</small></div>
+      <div class="tele-bar"><span data-tele-sources-bar style="width:{{ (100 * sources_used / max_sources) | round | int if max_sources else 0 }}%"></span></div>
+    </div>
+    <div class="tele-cell">
+      <div class="tele-k">Requirements</div>
+      <div class="tele-v"><span data-tele-sat>{{ n_sat }}</span> <small>/ {{ requirements | length }}</small></div>
+      <div class="tele-bar"><span data-tele-req-bar style="width:{{ (100 * n_sat / (requirements | length)) | round | int if requirements else 0 }}%;background:var(--success)"></span></div>
+    </div>
+    <div class="tele-cell">
+      <div class="tele-k">Elapsed</div>
+      <div class="tele-v" data-tele-elapsed>{{ '%.1fs' % live_state.elapsed if live_state else '—' }}</div>
+    </div>
+    {% if mission.status in ('collecting', 'synthesizing') and live %}
+    <div class="tele-cell tele-acts">
+      {% if live_state and live_state.cancel_requested %}
+        <span class="mono" style="font-size:11px;color:var(--fg-subtle)">stopping…</span>
+      {% else %}
+      <form method="post" action="/missions/{{ mission.id }}/stop" style="margin:0">
+        <button type="submit" class="btn btn-sm">Stop after this pass</button>
+      </form>
       {% endif %}
     </div>
+    {% elif mission.status == 'done' %}
+    <div class="tele-cell tele-acts">
+      <form method="post" action="/agents/{{ mission.agent_id }}/run" style="margin:0">
+        <input type="hidden" name="query" value="{{ mission.question }}">
+        <button type="submit" class="btn btn-sm" title="Run this question again">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4h-4M2 13V9h4M13.5 9a6 6 0 0 1-10.5 3M2.5 7a6 6 0 0 1 10.5-3"/></svg>
+          Re-run
+        </button>
+      </form>
+      {% if mission.brief_markdown %}
+      <a class="btn btn-sm" href="/missions/{{ mission.id }}/brief.md">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg>
+        Export
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
-  <!-- Brief (when done) -->
-  {% if brief_html %}
-  <div class="card" style="padding:24px;margin-bottom:20px;">
-    <strong style="display:block;margin-bottom:10px;">Brief</strong>
-    <div class="markdown-body">{{ brief_html|safe }}</div>
+  <!-- ── Approval gate (editable plan) ──────────────────────── -->
+  {% if mission.status == 'awaiting_approval' %}
+  <form class="gate" method="post" action="/missions/{{ mission.id }}/approve" id="gateForm">
+    <input type="hidden" name="plan_json" id="planJson">
+    <div class="gate-head">
+      <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12.5h4M6.5 14.5h3M5 9.5A4 4 0 1 1 11 9.5c-.6.7-1 1.4-1 2.5H6c0-1.1-.4-1.8-1-2.5Z"/></svg>
+      <div>
+        <div class="gate-title">The agent drafted a collection plan</div>
+        <div class="gate-sub">
+          Each requirement below is a question the agent must answer before it will call the
+          mission complete. Edit the wording, cut what you don't need, or add a search query it
+          missed — this is the only point where you steer it. After approval it collects
+          autonomously until every requirement is satisfied or hits its attempt cap.
+        </div>
+      </div>
+    </div>
+
+    <div class="gate-body" id="planBody">
+      {% for r in requirements %}
+      <div class="plan-row" data-req-id="{{ r.id }}">
+        <div class="plan-n">{{ '%02d' % loop.index }}</div>
+        <div>
+          <input class="plan-title-in" data-title value="{{ r.title }}" aria-label="Requirement title">
+          {% if r.rationale %}<div class="plan-why">{{ r.rationale }}</div>{% endif %}
+          <div class="qchips" data-qchips>
+            {% for q in req_queries.get(r.id, []) %}
+            <span class="qchip" data-q="{{ q }}">{{ q }}
+              <button type="button" data-qdel aria-label="Remove query">
+                <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+              </button>
+            </span>
+            {% endfor %}
+            <button type="button" class="qadd" data-qadd>
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+              query
+            </button>
+          </div>
+        </div>
+        <button type="button" class="plan-drop" data-drop title="Drop requirement">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="gate-foot">
+      <button type="submit" class="btn btn-accent">
+        Approve <span id="keptCount">{{ requirements | length }}</span> requirements
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </button>
+      <button type="button" class="btn" id="addReq">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        Add requirement
+      </button>
+      <span class="count">budget {{ max_sources }} sources · {{ max_passes }} passes · {{ per_req_attempts }} tries per requirement</span>
+    </div>
+  </form>
+  {% endif %}
+
+  <!-- ── Requirements matrix ────────────────────────────────── -->
+  {% if mission.status != 'awaiting_approval' and requirements %}
+  <div class="matrix">
+    <div class="matrix-head">
+      <strong>Collection requirements</strong>
+      <span class="grow"></span>
+      <div style="width:180px">{{ coverage(n_sat, n_unmet, n_pending) }}</div>
+    </div>
+    {% for r in requirements %}
+    {% set srcs = req_sources.get(r.id, []) %}
+    <div class="req" data-req="{{ r.id }}" data-status="{{ r.status }}">
+      <button type="button" class="req-main" data-toggle aria-expanded="false">
+        <span class="pill pill-{{ r.status }}" data-req-pill>
+          {% if r.status == 'satisfied' %}
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 3.5 3.5L13 5"/></svg>
+          {% elif r.status == 'unmet' %}
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+          {% else %}<span class="dot"></span>{% endif %}
+          <span data-req-status>{{ r.status }}</span>
+        </span>
+        <span>
+          <span class="req-t">{{ r.title }}</span>
+          {% if r.description %}<span class="req-d" style="display:block">{{ r.description }}</span>{% endif %}
+        </span>
+        <span class="attempts">
+          <span class="dots">
+            {% for i in range(per_req_attempts) %}
+            <i class="{{ 'on max' if r.attempts >= per_req_attempts and i < r.attempts else ('on' if i < r.attempts else '') }}"></i>
+            {% endfor %}
+          </span>
+          <span data-req-attempts>{{ r.attempts }}</span>/{{ per_req_attempts }}
+        </span>
+        <svg class="ico" data-chev viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:var(--fg-subtle)"><path d="m4 6 4 4 4-4"/></svg>
+      </button>
+
+      <div class="req-open" hidden>
+        <div>
+          {% if r.rationale %}
+          <div class="req-sec-k">Why the agent asked for this</div>
+          <div class="req-why">{{ r.rationale }}</div>
+          {% endif %}
+
+          {% if r.status == 'unmet' %}
+          <div class="gap">
+            <div class="gap-k">
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+              Gap after {{ r.attempts }} attempt{{ '' if r.attempts == 1 else 's' }}
+            </div>
+            <div class="gap-t">{{ r.assessment_missing or 'The agent could not find sources covering this requirement.' }}</div>
+            <div class="gap-conf">
+              {% if r.assessment_confidence %}assessor confidence: {{ r.assessment_confidence }}{% endif %}
+              {%- if r.attempts >= per_req_attempts %} · attempt cap reached, agent moved on{% endif %}
+            </div>
+          </div>
+          {% elif r.status == 'pending' %}
+          <div class="gap pending">
+            <div class="gap-k">
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12.5a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11ZM11 11l3.5 3.5"/></svg>
+              Still collecting
+            </div>
+            <div class="gap-t">{{ r.assessment_missing or 'No assessment yet — the agent has not finished a pass on this requirement.' }}</div>
+            {% if r.assessment_confidence %}<div class="gap-conf">assessor confidence: {{ r.assessment_confidence }}</div>{% endif %}
+          </div>
+          {% else %}
+          <div class="satis">
+            <div class="satis-k">
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 3.5 3.5L13 5"/></svg>
+              Satisfied
+            </div>
+            <div class="gap-t">
+              Coverage judged sufficient from {{ srcs | length }} source{{ '' if srcs | length == 1 else 's' }}{% if r.assessment_confidence %} at {{ r.assessment_confidence }} confidence{% endif %}.
+            </div>
+          </div>
+          {% endif %}
+
+          {% if req_queries.get(r.id) %}
+          <div class="req-sec-k">Queries the agent ran</div>
+          <div class="qchips">
+            {% for q in req_queries.get(r.id, []) %}
+            <span class="qchip static">{{ q }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <div class="req-sec-k">Sources linked to this requirement</div>
+          <div class="req-src">
+            {% for s in srcs %}
+            <a class="req-src-i" href="/document/{{ s.doc.id }}" title="{{ s.doc.title or s.doc.domain }}">
+              <span class="req-src-n">{% if s.n %}[{{ s.n }}]{% endif %}</span>
+              <span class="req-src-t">{{ s.doc.title or s.doc.domain }}</span>
+              <span class="req-src-w">{{ '%.1fk' % (s.doc.word_count / 1000) }}</span>
+            </a>
+            {% else %}
+            <div class="req-src-t" style="color:var(--fg-subtle);padding:6px 8px">No sources linked yet.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
   </div>
   {% endif %}
 
-  <!-- Live trace (while active) -->
-  {% if live and mission.status not in ('done','error') %}
-  <div class="log-pane" style="margin-bottom:20px;">
+  <!-- ── Live trace ─────────────────────────────────────────── -->
+  {% if live and mission.status not in ('done', 'error') %}
+  <div class="log-pane" style="margin-bottom:18px">
     <div class="stream-head">
       <span class="live-dot"></span>
       <strong style="color:var(--fg)">Agent log</strong>
       <span style="margin-left:auto" class="mono" id="traceMeta">working…</span>
     </div>
-    <div class="log-stream" id="logStream"></div>
+    <div class="log-stream" id="logStream" style="min-height:180px;max-height:280px"></div>
   </div>
   {% endif %}
 
-  <!-- Collected sources -->
-  {% if documents %}
-  <div class="card" style="padding:0;overflow:hidden;">
-    <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
-      <strong>Sources</strong>
-      <span class="mono" style="color:var(--fg-subtle);font-size:12px;margin-left:6px;">{{ documents|length }}</span>
-    </div>
-    {% for d in documents %}
-    <a href="/document/{{ d.id }}" class="card"
-       style="padding:10px 18px;border:0;border-bottom:1px solid var(--border);border-radius:0;display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit;">
-      <div style="flex:1;overflow:hidden;">
-        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ d.title or d.domain }}</div>
-        <div class="mono" style="color:var(--fg-subtle);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ d.url }}</div>
+  <!-- ── Brief + citation-linked source rail ────────────────── -->
+  {% if brief_html %}
+  <div class="brief-layout">
+    <div class="brief">
+      <div class="brief-head">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 1.5h6l3 3v10h-9v-13ZM9.5 1.5v3h3"/></svg>
+        <strong>Brief</strong>
+        <span class="brief-meta">synthesized{% if mission.finished_at %} · {{ mission.finished_at[:16] | replace('T', ' ') }}{% endif %}</span>
+        <button type="button" class="btn btn-sm" id="copyBrief">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5V2.5h8.5V11H11M3 5h8v9.5H3V5Z"/></svg>
+          <span id="copyBriefLabel">Copy</span>
+        </button>
       </div>
-      <span class="mono" style="color:var(--fg-subtle);font-size:11px;">{{ d.word_count }}w</span>
-      {% if d.id in ext_ids %}<span class="mono" style="color:var(--accent);font-size:11px;">extracted</span>{% endif %}
-    </a>
-    {% endfor %}
+      <div class="brief-body" id="briefBody">
+        {{ brief_html | safe }}
+        {% if n_unmet %}
+        <div class="gapnote">
+          <div class="gapnote-k">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>
+            Unmet requirement{{ '' if n_unmet == 1 else 's' }} — stated, not hidden
+          </div>
+          {% for r in requirements if r.status == 'unmet' %}
+          <p><strong>{{ r.title }}</strong> — {{ r.assessment_missing or 'no sources found covering this.' }}</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <pre id="briefSource" hidden>{{ mission.brief_markdown or '' }}</pre>
+    </div>
+
+    <aside class="srail">
+      <div class="srail-head">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10.5 3.5 13a2.5 2.5 0 0 1-3.5-3.5L2.5 7M10 5.5 12.5 3a2.5 2.5 0 0 1 3.5 3.5L13.5 9M5 11l6-6"/></svg>
+        Sources
+        <span class="n">{{ numbered_sources | length }}</span>
+      </div>
+      <div class="srail-list" id="srailList">
+        {% for n, d in numbered_sources %}
+        <a class="src" data-src="{{ n }}" href="/document/{{ d.id }}">
+          <span class="src-n">[{{ n }}]</span>
+          <div>
+            <div class="src-t">{{ d.title or d.domain }}</div>
+            <div class="src-m">
+              <span class="fav">{{ d.domain[:1] | upper }}</span>
+              {{ d.domain }} · {{ '%.1fk' % (d.word_count / 1000) }}
+            </div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </aside>
   </div>
   {% endif %}
 
 </div>
 
-<style>
-  .status-badge{font:500 11px var(--font-mono);padding:2px 8px;border-radius:999px;
-    border:1px solid var(--border);color:var(--fg-subtle);white-space:nowrap;}
-  .status-done{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
-  .status-error{color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border));}
-  .status-collecting,.status-synthesizing,.status-planning{color:var(--fg);}
-  .status-req-satisfied{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 50%,var(--border));}
-  .status-req-unmet{color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border));}
-  .status-req-pending{color:var(--fg-subtle);}
-</style>
-
 <script>
-(function() {
-  const missionId = {{ mission.id|tojson }};
-  const initialStatus = {{ mission.status|tojson }};
-  const terminal = (initialStatus === 'done' || initialStatus === 'error');
+(function () {
+  const missionId = {{ mission.id | tojson }};
+  const initialStatus = {{ mission.status | tojson }};
+  const perReqAttempts = {{ per_req_attempts }};
+  const maxSources = {{ max_sources }};
+  const maxPasses = {{ max_passes }};
 
+  /* ---------- Approval gate: the DOM is the plan; serialize on submit ---- */
+  const gateForm = document.getElementById('gateForm');
+  if (gateForm) {
+    const planBody = document.getElementById('planBody');
+    const keptCount = document.getElementById('keptCount');
+
+    const refreshCount = () => {
+      keptCount.textContent = planBody.querySelectorAll('.plan-row:not(.plan-dropped)').length;
+    };
+    const chip = (q) => {
+      const el = document.createElement('span');
+      el.className = 'qchip';
+      el.dataset.q = q;
+      el.textContent = q;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.qdel = '';
+      b.setAttribute('aria-label', 'Remove query');
+      b.innerHTML = '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg>';
+      el.appendChild(b);
+      return el;
+    };
+
+    planBody.addEventListener('click', (e) => {
+      const del = e.target.closest('[data-qdel]');
+      if (del) { del.closest('.qchip').remove(); return; }
+
+      const drop = e.target.closest('[data-drop]');
+      if (drop) {
+        const row = drop.closest('.plan-row');
+        const dropped = row.classList.toggle('plan-dropped');
+        row.querySelectorAll('input, .qadd').forEach(el => { el.disabled = dropped; });
+        drop.title = dropped ? 'Restore requirement' : 'Drop requirement';
+        refreshCount();
+        return;
+      }
+
+      const add = e.target.closest('[data-qadd]');
+      if (add) {
+        const input = document.createElement('input');
+        input.className = 'qadd-in';
+        input.placeholder = 'new search query…';
+        const commit = () => {
+          const v = input.value.trim();
+          if (v) add.parentNode.insertBefore(chip(v), add);
+          input.remove();
+          add.hidden = false;
+        };
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+          if (ev.key === 'Escape') { input.remove(); add.hidden = false; }
+        });
+        input.addEventListener('blur', commit);
+        add.hidden = true;
+        add.parentNode.insertBefore(input, add);
+        input.focus();
+      }
+    });
+
+    document.getElementById('addReq').addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.className = 'plan-row';
+      row.innerHTML =
+        '<div class="plan-n">' + String(planBody.children.length + 1).padStart(2, '0') + '</div>' +
+        '<div><input class="plan-title-in" data-title placeholder="New requirement…" aria-label="Requirement title">' +
+        '<div class="plan-why">Added by you at the approval gate.</div>' +
+        '<div class="qchips" data-qchips><button type="button" class="qadd" data-qadd>' +
+        '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg> query</button></div></div>' +
+        '<button type="button" class="plan-drop" data-drop title="Drop requirement">' +
+        '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.5 3.5 12.5 12.5M12.5 3.5l-9 9"/></svg></button>';
+      planBody.appendChild(row);
+      row.querySelector('[data-title]').focus();
+      refreshCount();
+    });
+
+    gateForm.addEventListener('submit', () => {
+      const plan = Array.from(planBody.querySelectorAll('.plan-row')).map(row => ({
+        id: row.dataset.reqId || null,
+        title: (row.querySelector('[data-title]').value || '').trim(),
+        queries: Array.from(row.querySelectorAll('.qchip')).map(c => c.dataset.q),
+        dropped: row.classList.contains('plan-dropped'),
+      })).filter(p => p.id || p.title);   // drop blank rows the user added but left empty
+      document.getElementById('planJson').value = JSON.stringify(plan);
+    });
+  }
+
+  /* ---------- Requirements matrix: one row open at a time ---------------- */
+  const matrix = document.querySelector('.matrix');
+  if (matrix) {
+    const setOpen = (req, open) => {
+      req.querySelector('.req-open').hidden = !open;
+      req.querySelector('[data-toggle]').setAttribute('aria-expanded', open ? 'true' : 'false');
+      const chev = req.querySelector('[data-chev] path');
+      if (chev) chev.setAttribute('d', open ? 'm4 10 4-4 4 4' : 'm4 6 4 4 4-4');
+    };
+    matrix.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-toggle]');
+      if (!btn) return;
+      const req = btn.closest('.req');
+      const isOpen = !req.querySelector('.req-open').hidden;
+      matrix.querySelectorAll('.req').forEach(r => setOpen(r, false));
+      setOpen(req, !isOpen);
+    });
+    // Attention belongs on the first unmet requirement.
+    const firstUnmet = matrix.querySelector('.req[data-status="unmet"]') ||
+                       matrix.querySelector('.req[data-status="pending"]');
+    if (firstUnmet) setOpen(firstUnmet, true);
+  }
+
+  /* ---------- Citations light their source ------------------------------- */
+  const briefBody = document.getElementById('briefBody');
+  const srail = document.getElementById('srailList');
+  if (briefBody && srail) {
+    const light = (n) => {
+      srail.querySelectorAll('.src').forEach(s => s.classList.toggle('lit', s.dataset.src === String(n)));
+      briefBody.querySelectorAll('.cite').forEach(c => c.classList.toggle('on', c.dataset.cite === String(n)));
+      if (n === null) return;
+      const el = srail.querySelector('.src[data-src="' + n + '"]');
+      // Deliberately not scrollIntoView — that would scroll the whole page.
+      if (el) {
+        const top = el.offsetTop - srail.offsetTop;
+        if (top < srail.scrollTop || top > srail.scrollTop + srail.clientHeight - el.offsetHeight) {
+          srail.scrollTop = top - 8;
+        }
+      }
+    };
+    briefBody.addEventListener('mouseover', (e) => {
+      const c = e.target.closest('.cite');
+      if (c) light(+c.dataset.cite);
+    });
+    briefBody.addEventListener('click', (e) => {
+      const c = e.target.closest('.cite');
+      if (c) light(+c.dataset.cite);
+    });
+    briefBody.addEventListener('mouseleave', () => light(null));
+    srail.addEventListener('mouseover', (e) => {
+      const s = e.target.closest('.src');
+      if (s) light(+s.dataset.src);
+    });
+  }
+
+  const copyBtn = document.getElementById('copyBrief');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const src = document.getElementById('briefSource');
+      navigator.clipboard.writeText(src ? src.textContent : '').then(() => {
+        const l = document.getElementById('copyBriefLabel');
+        const o = l.textContent; l.textContent = 'Copied';
+        setTimeout(() => { l.textContent = o; }, 1200);
+      });
+    });
+  }
+
+  /* ---------- Poll: update in place, reload on status change ------------- */
   const logStream = document.getElementById('logStream');
   const traceMeta = document.getElementById('traceMeta');
-  const coverage = document.getElementById('coverage');
-  const elapsed = document.getElementById('elapsed');
   let renderedLogs = 0;
 
   function renderLog(entry) {
-    if (!logStream) return;
     const div = document.createElement('div');
     div.className = 'log-line';
-    div.innerHTML = `
-      <span class="log-time">${entry.t.toFixed(2).padStart(5,'0')}</span>
-      <span class="log-level ${entry.level}">${entry.level.toUpperCase()}</span>
-      <span class="log-msg">${entry.msg}</span>`;
+    div.innerHTML =
+      '<span class="log-time">' + entry.t.toFixed(2).padStart(5, '0') + '</span>' +
+      '<span class="log-level ' + entry.level + '">' + entry.level.toUpperCase() + '</span>' +
+      '<span class="log-msg">' + entry.msg + '</span>';
     logStream.appendChild(div);
     logStream.scrollTop = logStream.scrollHeight;
   }
 
-  function updateRequirements(reqs) {
-    let sat = 0;
-    reqs.forEach((r, i) => {
-      if (r.status === 'satisfied') sat++;
-      const row = document.querySelector(`.req-row[data-idx="${i}"]`);
+  function applyState(s) {
+    // The server re-renders the gate / matrix / brief per status, so a status
+    // change means reload rather than duplicating that rendering here.
+    if (s.status !== initialStatus) { window.location.reload(); return false; }
+
+    (s.requirements || []).forEach(r => {
+      const row = document.querySelector('.req[data-req="' + r.id + '"]');
       if (!row) return;
-      const badge = row.querySelector('[data-req-status]');
-      if (badge) { badge.textContent = r.status; badge.className = 'status-badge status-req-' + r.status; }
-      const tries = row.querySelector('[data-req-attempts]');
-      if (tries) tries.textContent = r.attempts + ' tries';
+      if (row.dataset.status !== r.status) { window.location.reload(); return; }
+      const at = row.querySelector('[data-req-attempts]');
+      if (at) at.textContent = r.attempts;
+      const dots = row.querySelectorAll('.attempts i');
+      dots.forEach((d, i) => {
+        d.className = i < r.attempts ? (r.attempts >= perReqAttempts ? 'on max' : 'on') : '';
+      });
     });
-    if (coverage) coverage.textContent = sat + '/' + reqs.length + ' satisfied';
+
+    const sat = s.satisfied || 0, unmet = s.unmet || 0, total = s.total || 0;
+    const setTxt = (sel, v) => { const el = document.querySelector(sel); if (el) el.textContent = v; };
+    setTxt('[data-tele-sat]', sat);
+    setTxt('[data-cov-sat]', sat);
+    setTxt('[data-cov-unmet]', unmet);
+    setTxt('[data-cov-pending]', total - sat - unmet);
+    const reqBar = document.querySelector('[data-tele-req-bar]');
+    if (reqBar && total) reqBar.style.width = (100 * sat / total) + '%';
+    const cov = document.querySelector('.matrix [data-coverage]');
+    if (cov) {
+      const seg = (cls, v) => {
+        let el = cov.querySelector('.' + cls);
+        if (v > 0 && !el) { el = document.createElement('span'); el.className = cls; cov.appendChild(el); }
+        if (el) { el.style.flexGrow = v; el.hidden = v === 0; }
+      };
+      seg('cov-satisfied', sat); seg('cov-unmet', unmet); seg('cov-pending', total - sat - unmet);
+    }
+
+    if (s.trace) {
+      setTxt('[data-tele-elapsed]', s.trace.elapsed.toFixed(1) + 's');
+      if (s.trace.pass_num) {
+        const p = document.querySelector('[data-tele-pass]');
+        if (p) p.innerHTML = s.trace.pass_num + ' <small>of ' + maxPasses + '</small>';
+      }
+      setTxt('[data-tele-sources]', s.trace.sources_used);
+      const sb = document.querySelector('[data-tele-sources-bar]');
+      if (sb && maxSources) sb.style.width = (100 * s.trace.sources_used / maxSources) + '%';
+
+      if (logStream) {
+        const log = s.trace.log || [];
+        for (let i = renderedLogs; i < log.length; i++) renderLog(log[i]);
+        renderedLogs = log.length;
+        const inflight = (s.trace.urls || []).filter(u => u.status === 'fetching').length;
+        if (traceMeta) {
+          traceMeta.textContent = s.trace.cancel_requested
+            ? 'stopping after this pass'
+            : s.trace.stage + ' · ' + inflight + ' in flight';
+        }
+      }
+    }
+    return !s.done;
   }
 
   function poll() {
     fetch('/api/mission/' + missionId)
       .then(r => r.json())
-      .then(s => {
-        if (s.error) return;
-        if (s.status !== initialStatus) { window.location.reload(); return; }
-        updateRequirements(s.requirements || []);
-        if (s.trace) {
-          if (elapsed) elapsed.textContent = '⏱ ' + s.trace.elapsed.toFixed(1) + 's';
-          const log = s.trace.log || [];
-          for (let i = renderedLogs; i < log.length; i++) renderLog(log[i]);
-          renderedLogs = log.length;
-          const inflight = (s.trace.urls || []).filter(u => u.status === 'fetching').length;
-          if (traceMeta) traceMeta.textContent = s.trace.stage + ' · ' + inflight + ' in flight';
-        }
-        if (!s.done) setTimeout(poll, 1200);
-      })
+      .then(s => { if (!s.error && applyState(s)) setTimeout(poll, 1200); })
       .catch(() => setTimeout(poll, 2500));
   }
-
-  if (!terminal) poll();
+  if (initialStatus !== 'done' && initialStatus !== 'error') poll();
 })();
 </script>
 {% endblock %}
