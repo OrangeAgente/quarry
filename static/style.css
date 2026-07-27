@@ -1669,3 +1669,10 @@ h1.page-title em { font-style: italic; color: var(--accent); }
 /* [hidden] must beat the author-level display:grid above, or every
    requirement renders expanded. */
 .req-open[hidden]{display:none}
+
+/* ---------- Requirement re-tasking (terminal missions only) ---------- */
+.retask{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.retask form{margin:0;display:flex;gap:6px;align-items:center}
+.retask-form input{background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-family:var(--font-mono);font-size:11px;color:var(--fg);min-width:210px}
+.retask-form input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.retask-form input::placeholder{color:var(--fg-subtle)}

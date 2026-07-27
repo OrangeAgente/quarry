@@ -22,6 +22,15 @@
 {% set per_req_attempts = budget.get('per_req_attempts', 3) %}
 {% set sources_used = live_state.sources_used if live_state else documents | length %}
 
+{% macro delete_form() %}
+  <form method="post" action="/missions/{{ mission.id }}/delete" style="margin:0"
+        onsubmit="return confirm('Delete this mission? The plan and brief go away; collected sources stay in the Library.');">
+    <button type="submit" class="btn btn-sm btn-ghost" title="Delete mission" style="color:var(--danger)">
+      <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.5 9.5h5L11 4M6.5 6.5v5M9.5 6.5v5"/></svg>
+    </button>
+  </form>
+{% endmacro %}
+
 {% macro coverage(sat, unmet, pending, compact=False) %}
   {% set total = sat + unmet + pending %}
   {% if compact %}
@@ -116,7 +125,10 @@
         Export
       </a>
       {% endif %}
+      {{ delete_form() }}
     </div>
+    {% elif mission.status == 'error' %}
+    <div class="tele-cell tele-acts">{{ delete_form() }}</div>
     {% endif %}
   </div>
 
@@ -242,6 +254,16 @@
             <div class="gap-t">{{ r.assessment_missing or 'No assessment yet — the agent has not finished a pass on this requirement.' }}</div>
             {% if r.assessment_confidence %}<div class="gap-conf">assessor confidence: {{ r.assessment_confidence }}</div>{% endif %}
           </div>
+          {% elif r.accepted_by_user %}
+          <div class="satis">
+            <div class="satis-k">
+              <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 3.5 3.5L13 5"/></svg>
+              Accepted by you
+            </div>
+            <div class="gap-t">
+              You marked this satisfied from {{ srcs | length }} source{{ '' if srcs | length == 1 else 's' }}. The assessor had not judged it covered{% if r.assessment_confidence %} (it reported {{ r.assessment_confidence }} confidence){% endif %}.
+            </div>
+          </div>
           {% else %}
           <div class="satis">
             <div class="satis-k">
@@ -260,6 +282,25 @@
             {% for q in req_queries.get(r.id, []) %}
             <span class="qchip static">{{ q }}</span>
             {% endfor %}
+          </div>
+          {% endif %}
+
+          {# Re-tasking only makes sense once the agent has stopped; offering it
+             mid-run would race the collection loop. #}
+          {% if r.status != 'satisfied' and mission.status in ('done', 'error') %}
+          <div class="retask">
+            <form method="post" action="/missions/{{ mission.id }}/requirements/{{ r.id }}/retask" class="retask-form">
+              <input type="text" name="query" maxlength="300" required
+                     placeholder="a query the agent missed…" aria-label="New search query">
+              <button type="submit" class="btn btn-sm">
+                <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+                Add a query and re-task
+              </button>
+            </form>
+            <form method="post" action="/missions/{{ mission.id }}/requirements/{{ r.id }}/accept"
+                  onsubmit="return confirm('Mark this satisfied despite the assessor flagging a gap? This is recorded as your decision.');">
+              <button type="submit" class="btn btn-sm btn-ghost">Mark accepted as-is</button>
+            </form>
           </div>
           {% endif %}
         </div>
