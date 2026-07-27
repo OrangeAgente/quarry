@@ -2,6 +2,8 @@
 collected documents, with [n] citations. Supports a delta block ("what's new
 since last run") for scheduled runs.
 """
+import re
+
 from models import Document, Mission, Requirement
 from llm import chat
 from agent_assessor import is_usable
@@ -16,15 +18,42 @@ def _coverage_block(requirements: list[Requirement]) -> str:
     return "\n".join(lines) or "(no requirements)"
 
 
-def _sources_block(docs: list[Document], max_docs: int = 20, excerpt_chars: int = 2200) -> str:
-    # Usable (non-junk) docs first, but never drop a doc while slots remain —
-    # mirrors agent_assessor._sources_block.
-    ranked = sorted(docs, key=lambda d: not is_usable(d))
+MAX_BRIEF_SOURCES = 20
+
+
+def ordered_sources(docs: list[Document], max_docs: int = MAX_BRIEF_SOURCES) -> list[Document]:
+    """The exact source ordering the brief's `[n]` markers refer to: usable
+    (non-junk) docs first, never dropping one while slots remain, capped.
+    The mission page numbers its source rail with this so citations bind to the
+    right document."""
+    return sorted(docs, key=lambda d: not is_usable(d))[:max_docs]
+
+
+def _sources_block(docs: list[Document], max_docs: int = MAX_BRIEF_SOURCES,
+                   excerpt_chars: int = 2200) -> str:
     lines = []
-    for i, d in enumerate(ranked[:max_docs], 1):
+    for i, d in enumerate(ordered_sources(docs, max_docs), 1):
         body = (d.content_fit or d.content_markdown or "")[:excerpt_chars]
         lines.append(f"[{i}] {d.title or d.domain} — {d.url}\n{body}")
     return "\n\n".join(lines)
+
+
+_CITE_RE = re.compile(r"\[(\d{1,3})\]")
+
+
+def linkify_citations(html: str, max_n: int) -> str:
+    """Turn `[n]` markers in already-sanitized brief HTML into citation
+    controls. Runs AFTER markdown_render.render_markdown (never instead of it):
+    the only thing injected is markup built from an integer we re-serialize
+    ourselves, so no LLM/page content reaches the DOM unescaped. Out-of-range
+    numbers are left as plain text."""
+    def repl(m: "re.Match[str]") -> str:
+        n = int(m.group(1))
+        if not 1 <= n <= max_n:
+            return m.group(0)
+        return (f'<button type="button" class="cite" data-cite="{n}" '
+                f'aria-label="Source {n}">{n}</button>')
+    return _CITE_RE.sub(repl, html or "")
 
 
 def _delta_block(docs: list[Document], new_urls: set[str], max_items: int = 10) -> str:
