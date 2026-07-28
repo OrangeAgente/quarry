@@ -6,7 +6,7 @@ import re
 
 from models import Document, Mission, Requirement
 from llm import chat
-from agent_assessor import is_usable
+from content_quality import is_usable
 from prompt_templates import build_brief_prompt
 
 

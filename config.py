@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     llm_provider_fast: str = ""
     ollama_api_base: str = "http://host.docker.internal:11434"
     search_max_results: int = 5
+    # Engines tried in order until one returns results (ddgs backends).
+    # The duckduckgo backend alone frequently returns nothing under load.
+    search_backends: str = "auto,brave,bing,duckduckgo"
     db_path: str = "data/research.db"
     crawl_timeout: int = 30000
     flask_host: str = "0.0.0.0"

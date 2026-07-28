@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from models import Document, SearchResult
 from config import settings
+from content_quality import looks_like_block_page
 
 
 async def crawl_urls(search_results: list[SearchResult], search_query: str) -> list[Document]:
@@ -70,10 +71,19 @@ async def crawl_urls_with_progress(search_results: list[SearchResult], search_qu
     from jobs import update_url, add_log, inc_counter
 
     browser_cfg = BrowserConfig(headless=True, browser_type="chromium")
+    # Stealth options: a plain headless Chromium is trivially fingerprinted, and
+    # a large share of otherwise-good sources (Britannica, Stack Exchange, …)
+    # answer with a Cloudflare challenge instead of content.
     run_cfg = CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
         word_count_threshold=50,
         page_timeout=settings.crawl_timeout,
+        simulate_user=True,
+        override_navigator=True,
+        user_agent_mode="random",
+        remove_overlay_elements=True,
+        mean_delay=0.4,
+        max_range=0.8,
     )
 
     documents: list[Document] = []
@@ -101,6 +111,18 @@ async def crawl_urls_with_progress(search_results: list[SearchResult], search_qu
                     metadata = result.metadata if isinstance(result.metadata, dict) else {}
                     title = metadata.get("title") or sr.title or parsed.netloc
                     word_count = len(markdown_content.split()) if markdown_content else 0
+
+                    # A captcha wall or empty shell "succeeds" as far as the
+                    # browser is concerned. Reject it here so it is never
+                    # stored, never cited, and never charged to the mission's
+                    # source budget.
+                    junk, why = looks_like_block_page(title, word_count)
+                    if junk:
+                        update_url(job_id, sr.url, status="error", error=why)
+                        inc_counter(job_id, "crawl_done")
+                        add_log(job_id, "warn",
+                                f"discarded <code>{_esc(sr.url)}</code>: {_esc(why)}")
+                        return None
 
                     doc = Document(
                         id=str(uuid.uuid4()),

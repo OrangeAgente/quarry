@@ -1,6 +1,7 @@
 """Gap analysis: judge whether the documents collected for a requirement
 satisfy it, and if not, propose refined queries aimed at the gap.
 """
+import sys
 from dataclasses import dataclass
 
 from llm import chat_json
@@ -16,17 +17,7 @@ class Assessment:
     next_queries: list[str]
 
 
-_JUNK_TITLE_MARKERS = ("checking your browser", "recaptcha", "captcha",
-                       "are you a robot", "just a moment", "access denied")
-
-
-def is_usable(d: Document, min_words: int = 60) -> bool:
-    """Drop captcha/blocked/near-empty pages so they don't crowd out real
-    content in the LLM's limited view."""
-    if (d.word_count or 0) < min_words:
-        return False
-    title = (d.title or "").lower()
-    return not any(m in title for m in _JUNK_TITLE_MARKERS)
+from content_quality import is_usable  # noqa: F401  (re-exported for brief.py)
 
 
 def _sources_block(docs: list[Document], max_docs: int = 6, excerpt_chars: int = 2000) -> str:
@@ -46,10 +37,20 @@ def assess_requirement(requirement: Requirement, docs: list[Document]) -> Assess
     assessment with no new queries (caller's attempt cap will still advance)."""
     prompt = build_assess_prompt(requirement.title, requirement.description, _sources_block(docs))
     # The persona isn't needed for grading; a tight system message keeps it cheap.
-    parsed, _raw = chat_json(
-        "You are a meticulous research analyst grading source coverage.",
-        prompt, max_tokens=600,
-    )
+    try:
+        parsed, _raw = chat_json(
+            "You are a meticulous research analyst grading source coverage.",
+            prompt, max_tokens=600,
+        )
+    except Exception as e:  # noqa: BLE001
+        # A provider hiccup must not destroy a mission that has already paid to
+        # crawl. Treat it as "not assessed": the requirement stays open and the
+        # loop moves on, spending an attempt rather than the whole run.
+        print(f"[ASSESS] call failed for {requirement.title!r}: "
+              f"{type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        return Assessment(False, "unknown",
+                          f"assessment could not be completed ({type(e).__name__})", [])
+
     if not parsed:
         return Assessment(False, "low", "could not assess", [])
 

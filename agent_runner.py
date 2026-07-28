@@ -90,6 +90,24 @@ async def _run_planning(mission_id: str) -> None:
         await insert_requirement(req)
 
     plan_summary = [{"title": r.title, "description": r.description} for r in requirements]
+
+    # A scheduled run has nobody at the keyboard, so it approves its own plan
+    # and goes straight on to collecting. Interactive runs still stop here.
+    budget = {}
+    try:
+        budget = json.loads(mission.budget_json or "{}")
+    except json.JSONDecodeError:
+        pass
+    if budget.get("auto_approve"):
+        await update_mission(mission_id, status="collecting",
+                             plan_json=json.dumps(plan_summary))
+        if job_id:
+            jobs.add_log(job_id, "ok",
+                         f"plan ready: <em>{len(requirements)}</em> requirements "
+                         f"— auto-approved (scheduled run)")
+        await _run_collection(mission_id)
+        return
+
     await update_mission(
         mission_id, status="awaiting_approval", plan_json=json.dumps(plan_summary)
     )
@@ -145,78 +163,25 @@ async def _run_collection(mission_id: str) -> None:
         for req in pending:
             if len(collected) >= max_sources:
                 break
-            if req.attempts >= per_req_attempts:
-                await update_requirement(req.id, status="unmet")
-                if job_id:
-                    jobs.add_log(job_id, "warn", f"unmet (capped): <em>{_esc(req.title)}</em>")
-                continue
-
-            queries = json.loads(req.next_queries_json or "[]") or [mission.question]
-            if job_id:
-                jobs.add_log(job_id, "info", f"collecting: <em>{_esc(req.title)}</em>")
-
-            # Search across this requirement's queries.
-            results = []
-            seen_q_urls: set[str] = set()
-            for q in queries:
-                for sr in await asyncio.to_thread(web_search, q, PER_QUERY_RESULTS):
-                    if sr.url not in seen_q_urls:
-                        seen_q_urls.add(sr.url)
-                        results.append(sr)
-
-            # New URLs to crawl, bounded by this requirement's fair share and
-            # the remaining global source budget.
-            remaining = max_sources - len(collected)
-            cap = max(0, min(per_req_cap, remaining))
-            to_crawl = [sr for sr in results if sr.url not in collected][:cap]
-
-            if to_crawl:
-                fresh_for_trace = [JobUrl(url=sr.url, title=sr.title or sr.url)
-                                   for sr in to_crawl if sr.url not in job_urls]
-                if job_id and fresh_for_trace:
-                    jobs.add_urls(job_id, fresh_for_trace)
-                    job_urls.update(u.url for u in fresh_for_trace)
-                docs = await crawl_urls_with_progress(to_crawl, mission.question, job_id or "")
-                for doc in docs:
-                    doc_id = await upsert_document(doc)
-                    collected[doc.url] = doc_id
-                    await link_mission_document(mission_id, req.id, doc_id)
-                if job_id:
-                    jobs.update_job(job_id, sources_used=len(collected))
-
-            # Link any already-collected URLs that resurfaced for this requirement,
-            # so assessment sees the full picture.
-            for sr in results:
-                if sr.url in collected:
-                    await link_mission_document(mission_id, req.id, collected[sr.url])
-
-            req_docs = await get_requirement_documents(mission_id, req.id)
-            assessment = await asyncio.to_thread(assess_requirement, req, req_docs)
-            attempts = req.attempts + 1
-
-            if assessment.satisfied:
+            try:
+                await _collect_one(
+                    mission, req, collected, job_urls, job_id,
+                    max_sources, per_req_cap, per_req_attempts,
+                )
+            except Exception as e:  # noqa: BLE001
+                # Isolate a requirement's failure: burn one of its attempts and
+                # carry on, rather than losing the whole mission (and the
+                # sources already crawled) to one bad call.
+                traceback.print_exc()
                 await update_requirement(
-                    req.id, status="satisfied", attempts=attempts,
-                    satisfied_doc_ids_json=json.dumps([d.id for d in req_docs]),
-                    assessment_missing="",
-                    assessment_confidence=assessment.confidence,
+                    req.id, attempts=req.attempts + 1,
+                    status=("unmet" if req.attempts + 1 >= per_req_attempts else "pending"),
+                    assessment_missing=f"collection failed: {type(e).__name__}",
+                    assessment_confidence="unknown",
                 )
                 if job_id:
-                    jobs.add_log(job_id, "ok",
-                                 f"satisfied: <em>{_esc(req.title)}</em> · {len(req_docs)} sources")
-            else:
-                next_q = assessment.next_queries or queries
-                status = "unmet" if attempts >= per_req_attempts else "pending"
-                await update_requirement(
-                    req.id, status=status, attempts=attempts,
-                    next_queries_json=json.dumps(next_q),
-                    assessment_missing=assessment.missing,
-                    assessment_confidence=assessment.confidence,
-                )
-                if job_id:
-                    label = "unmet (capped)" if status == "unmet" else "gap remains"
-                    jobs.add_log(job_id, "warn",
-                                 f"{label} ({assessment.confidence}): <em>{_esc(req.title)}</em>")
+                    jobs.add_log(job_id, "err",
+                                 f"error on <em>{_esc(req.title)}</em>: {_esc(type(e).__name__)}")
 
         if len(collected) >= max_sources:
             if job_id:
@@ -236,14 +201,113 @@ async def _run_collection(mission_id: str) -> None:
     await _synthesize(mission_id, agent, job_id)
 
 
+async def _collect_one(mission, req, collected, job_urls, job_id,
+                       max_sources, per_req_cap, per_req_attempts) -> None:
+    """Search, crawl and assess a single requirement. Raising here costs this
+    requirement an attempt, not the mission."""
+    mission_id = mission.id
+    if req.attempts >= per_req_attempts:
+        await update_requirement(req.id, status="unmet")
+        if job_id:
+            jobs.add_log(job_id, "warn", f"unmet (capped): <em>{_esc(req.title)}</em>")
+        return
+
+    queries = json.loads(req.next_queries_json or "[]") or [mission.question]
+    if job_id:
+        jobs.add_log(job_id, "info", f"collecting: <em>{_esc(req.title)}</em>")
+
+    # Search across this requirement's queries.
+    results = []
+    seen_q_urls: set[str] = set()
+    for q in queries:
+        for sr in await asyncio.to_thread(web_search, q, PER_QUERY_RESULTS):
+            if sr.url not in seen_q_urls:
+                seen_q_urls.add(sr.url)
+                results.append(sr)
+
+    # New URLs to crawl, bounded by this requirement's fair share and the
+    # remaining global source budget.
+    remaining = max_sources - len(collected)
+    cap = max(0, min(per_req_cap, remaining))
+    to_crawl = [sr for sr in results if sr.url not in collected][:cap]
+
+    if to_crawl:
+        fresh_for_trace = [JobUrl(url=sr.url, title=sr.title or sr.url)
+                           for sr in to_crawl if sr.url not in job_urls]
+        if job_id and fresh_for_trace:
+            jobs.add_urls(job_id, fresh_for_trace)
+            job_urls.update(u.url for u in fresh_for_trace)
+        docs = await crawl_urls_with_progress(to_crawl, mission.question, job_id or "")
+        for doc in docs:
+            doc_id = await upsert_document(doc)
+            collected[doc.url] = doc_id
+            await link_mission_document(mission_id, req.id, doc_id)
+        if job_id:
+            jobs.update_job(job_id, sources_used=len(collected))
+
+    # Link any already-collected URLs that resurfaced for this requirement, so
+    # assessment sees the full picture.
+    for sr in results:
+        if sr.url in collected:
+            await link_mission_document(mission_id, req.id, collected[sr.url])
+
+    req_docs = await get_requirement_documents(mission_id, req.id)
+    assessment = await asyncio.to_thread(assess_requirement, req, req_docs)
+    attempts = req.attempts + 1
+
+    if assessment.satisfied:
+        await update_requirement(
+            req.id, status="satisfied", attempts=attempts,
+            satisfied_doc_ids_json=json.dumps([d.id for d in req_docs]),
+            assessment_missing="",
+            assessment_confidence=assessment.confidence,
+        )
+        if job_id:
+            jobs.add_log(job_id, "ok",
+                         f"satisfied: <em>{_esc(req.title)}</em> · {len(req_docs)} sources")
+    else:
+        next_q = assessment.next_queries or queries
+        status = "unmet" if attempts >= per_req_attempts else "pending"
+        await update_requirement(
+            req.id, status=status, attempts=attempts,
+            next_queries_json=json.dumps(next_q),
+            assessment_missing=assessment.missing,
+            assessment_confidence=assessment.confidence,
+        )
+        if job_id:
+            label = "unmet (capped)" if status == "unmet" else "gap remains"
+            jobs.add_log(job_id, "warn",
+                         f"{label} ({assessment.confidence}): <em>{_esc(req.title)}</em>")
+
+
+EXTRACT_CONCURRENCY = 4
+
+
 async def _extract_sources(mission_id: str, prompt: str, job_id) -> None:
     docs = await get_mission_documents(mission_id)
     if job_id:
         jobs.add_log(job_id, "info",
-                     f"extracting structured data from <em>{len(docs)}</em> sources")
+                     f"extracting structured data from <em>{len(docs)}</em> sources "
+                     f"· concurrency <em>{EXTRACT_CONCURRENCY}</em>")
+
+    # Extraction is one independent LLM call per document and was the slow tail
+    # of every mission; run a bounded number at once. The cap keeps a local
+    # model (and a hosted rate limit) from being swamped.
+    sem = asyncio.Semaphore(EXTRACT_CONCURRENCY)
+
+    async def one(doc):
+        async with sem:
+            return await asyncio.to_thread(extract_from_document, doc, prompt)
+
+    results = await asyncio.gather(*(one(d) for d in docs), return_exceptions=True)
+
     done = 0
-    for doc in docs:
-        ext = await asyncio.to_thread(extract_from_document, doc, prompt)
+    for doc, ext in zip(docs, results):
+        if isinstance(ext, Exception):
+            if job_id:
+                jobs.add_log(job_id, "warn",
+                             f"extraction failed for <code>{_esc(doc.domain)}</code>")
+            continue
         if ext:
             await insert_extraction(ext)
             done += 1
@@ -261,12 +325,18 @@ async def _synthesize(mission_id: str, agent, job_id) -> None:
     requirements = await get_requirements_for_mission(mission_id)
     docs = await get_mission_documents(mission_id)
 
-    # Delta: only when there is a prior finished run for the same agent+question.
+    # Delta for the "morning brief": what this run found that the previous run
+    # of the same agent on the same question did not. Diffed against that one
+    # mission specifically — not against every mission ever — or a URL another
+    # agent happened to crawl would wrongly count as "already seen".
     new_urls: set[str] = set()
     prior = await get_latest_finished_mission(mission.agent_id, mission.question, mission_id)
     if prior:
-        prior_urls = await get_prior_mission_urls(mission_id)
+        prior_urls = {d.url for d in await get_mission_documents(prior.id)}
         new_urls = {d.url for d in docs} - prior_urls
+        if job_id:
+            jobs.add_log(job_id, "info",
+                         f"delta vs previous run: <em>{len(new_urls)}</em> new source(s)")
 
     brief_md = await asyncio.to_thread(synthesize_brief, mission, requirements, docs, new_urls)
 

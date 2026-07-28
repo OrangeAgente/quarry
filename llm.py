@@ -7,6 +7,7 @@ that knows how we talk to the LLM.
 import json
 import re
 import sys
+import time
 from typing import Optional
 
 import litellm
@@ -31,6 +32,10 @@ def _provider_kwargs(model: str) -> dict:
     return {"api_key": settings.cohere_api_key}
 
 
+RETRY_ATTEMPTS = 2
+RETRY_DELAY_S = 1.0
+
+
 def _complete(model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
     response = litellm.completion(
         model=model,
@@ -45,6 +50,25 @@ def _complete(model: str, system: str, user: str, temperature: float, max_tokens
     return response.choices[0].message.content or ""
 
 
+def _complete_retrying(model: str, system: str, user: str,
+                       temperature: float, max_tokens: int) -> str:
+    """Providers transiently refuse to generate (Cohere's
+    NO_VALID_RESPONSE_GENERATED, rate limits, dropped connections). Retrying
+    once usually succeeds and is far cheaper than losing a mission that has
+    already paid for its crawling."""
+    last = None
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            return _complete(model, system, user, temperature, max_tokens)
+        except Exception as e:  # noqa: BLE001 - re-raised below if final
+            last = e
+            if attempt + 1 < RETRY_ATTEMPTS:
+                print(f"[LLM] {model} failed ({type(e).__name__}); retrying",
+                      file=sys.stderr, flush=True)
+                time.sleep(RETRY_DELAY_S * (attempt + 1))
+    raise last
+
+
 def chat_ex(system: str, user: str, temperature: float = 0.0,
             max_tokens: int = 2000, tier: str = "reasoning",
             allow_fallback: bool = True) -> tuple[str, str]:
@@ -54,13 +78,13 @@ def chat_ex(system: str, user: str, temperature: float = 0.0,
     Raises if that also fails."""
     model = model_for(tier)
     try:
-        return _complete(model, system, user, temperature, max_tokens), model
+        return _complete_retrying(model, system, user, temperature, max_tokens), model
     except Exception as e:  # noqa: BLE001
         reasoning = model_for("reasoning")
         if allow_fallback and tier == "fast" and model != reasoning:
             print(f"[LLM] fast tier ({model}) failed ({type(e).__name__}); "
                   f"falling back to {reasoning}", file=sys.stderr, flush=True)
-            return _complete(reasoning, system, user, temperature, max_tokens), reasoning
+            return _complete_retrying(reasoning, system, user, temperature, max_tokens), reasoning
         raise
 
 
