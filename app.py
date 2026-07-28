@@ -37,6 +37,9 @@ from jobs import (
 )
 from agent_runner import start_planning, start_collection
 from brief import ordered_sources, linkify_citations
+from scheduler import (start_scheduler, sync_agent_jobs, validate_cron,
+                       describe_next_run, scheduled_jobs,
+                       run_scheduled_agent_now)
 from markdown_render import render_markdown, to_plain_text
 from models import SearchRecord, Agent, Mission, Requirement
 from prompt_templates import build_persona
@@ -139,6 +142,10 @@ def ensure_db():
                 if stale:
                     print(f"[STARTUP] marked {stale} interrupted mission(s) as failed",
                           file=sys.stderr, flush=True)
+                # Started after the DB exists. Safe under the single gunicorn
+                # worker; the Flask reloader would otherwise start two.
+                if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+                    start_scheduler()
                 app._db_initialized = True
 
 
@@ -404,9 +411,10 @@ def documents_list():
 @app.route("/agents")
 def agents_list():
     agents = run_async(list_agents())
+    next_runs = {j["agent_id"]: j["next_run"] for j in scheduled_jobs()}
     return render_template("agents.html", agents=agents,
                            records=run_async(get_agent_track_records()),
-                           active_page="agents")
+                           next_runs=next_runs, active_page="agents")
 
 
 @app.route("/agents/new", methods=["GET", "POST"])
@@ -430,13 +438,22 @@ def agent_new():
         custom_persona = request.form.get("persona_prompt", "").strip()[:5000]
         persona = custom_persona or build_persona(expertise)
 
+        cron = request.form.get("schedule_cron", "").strip()[:120]
+        ok, err = validate_cron(cron)
+        if not ok:
+            flash(f"That schedule isn't a valid cron expression: {err}", "error")
+            return redirect(url_for("agent_new"))
+        sched_q = request.form.get("schedule_question", "").strip()[:500]
+
         agent = Agent(
             id=str(uuid.uuid4()), name=name, expertise=expertise,
             persona_prompt=persona, default_max_passes=max_passes,
             default_max_sources=max_sources, default_per_req_attempts=per_req,
+            schedule_cron=cron or None, schedule_question=sched_q or None,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         run_async(insert_agent(agent))
+        sync_agent_jobs()
         flash(f"Agent “{name}” created.", "success")
         return redirect(url_for("agents_list"))
 
@@ -467,17 +484,44 @@ def agent_edit(agent_id):
         custom_persona = request.form.get("persona_prompt", "").strip()[:5000]
         persona = custom_persona or build_persona(expertise)
 
+        cron = request.form.get("schedule_cron", "").strip()[:120]
+        ok, err = validate_cron(cron)
+        if not ok:
+            flash(f"That schedule isn't a valid cron expression: {err}", "error")
+            return redirect(url_for("agent_edit", agent_id=agent_id))
+        sched_q = request.form.get("schedule_question", "").strip()[:500]
+
         run_async(update_agent(
             agent_id,
             name=name, expertise=expertise, persona_prompt=persona,
+            schedule_cron=cron or None, schedule_question=sched_q or None,
             default_max_passes=_clamp("max_passes", agent.default_max_passes, 1, 10),
             default_max_sources=_clamp("max_sources", agent.default_max_sources, 1, 100),
             default_per_req_attempts=_clamp("per_req_attempts", agent.default_per_req_attempts, 1, 6),
         ))
+        sync_agent_jobs()
         flash(f"Agent “{name}” updated.", "success")
         return redirect(url_for("agents_list"))
 
     return render_template("agent_form.html", agent=agent, active_page="agents")
+
+
+@app.route("/agents/<agent_id>/run-scheduled", methods=["POST"])
+def agent_run_scheduled(agent_id):
+    """Fire an agent's scheduled run immediately — so a morning brief can be
+    tested without waiting for its cron window. Same unattended path as the
+    scheduler: auto-approves and collects."""
+    agent = run_async(get_agent(agent_id))
+    if not agent:
+        flash("Agent not found.", "error")
+        return redirect(url_for("agents_list"))
+    if not (agent.schedule_question or "").strip():
+        flash("Set a standing question before running the schedule.", "error")
+        return redirect(url_for("agent_edit", agent_id=agent_id))
+    run_scheduled_agent_now(agent_id)
+    flash(f"Running {agent.name}'s scheduled question now — it approves its own plan.",
+          "success")
+    return redirect(url_for("missions_list"))
 
 
 @app.route("/agents/<agent_id>/delete", methods=["POST"])
@@ -487,6 +531,7 @@ def agent_delete(agent_id):
         flash("Agent not found.", "error")
         return redirect(url_for("agents_list"))
     run_async(delete_agent(agent_id))
+    sync_agent_jobs()
     flash(f"Agent “{agent.name}” deleted. Its past missions are kept under History.", "success")
     return redirect(url_for("agents_list"))
 

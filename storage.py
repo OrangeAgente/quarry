@@ -82,10 +82,16 @@ async def init_db():
                 default_max_sources INTEGER DEFAULT 30,
                 default_per_req_attempts INTEGER DEFAULT 3,
                 schedule_cron TEXT,
+                schedule_question TEXT,
                 active INTEGER DEFAULT 1,
                 created_at TEXT NOT NULL
             )
         """)
+        # The standing question a scheduled ("morning brief") run researches.
+        try:
+            await db.execute("ALTER TABLE agents ADD COLUMN schedule_question TEXT")
+        except Exception:
+            pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS missions (
                 id TEXT PRIMARY KEY,
@@ -436,12 +442,12 @@ async def insert_agent(agent: Agent) -> bool:
             """INSERT INTO agents
                (id, name, expertise, persona_prompt, default_max_passes,
                 default_max_sources, default_per_req_attempts, schedule_cron,
-                active, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                schedule_question, active, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (agent.id, agent.name, agent.expertise, agent.persona_prompt,
              agent.default_max_passes, agent.default_max_sources,
              agent.default_per_req_attempts, agent.schedule_cron,
-             agent.active, agent.created_at),
+             agent.schedule_question, agent.active, agent.created_at),
         )
         await db.commit()
         return True

@@ -18,7 +18,9 @@ class Agent(BaseModel):
     default_max_passes: int = 4
     default_max_sources: int = 30
     default_per_req_attempts: int = 3
-    schedule_cron: Optional[str] = None  # Phase 2
+    # Cron expression + the standing question an unattended run researches.
+    schedule_cron: Optional[str] = None
+    schedule_question: Optional[str] = None
     active: int = 1
     created_at: str
 

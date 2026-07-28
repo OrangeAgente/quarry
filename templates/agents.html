@@ -73,6 +73,18 @@
         <span class="budget-chip">{{ a.default_max_sources }} sources</span>
         <span class="budget-chip">{{ a.default_max_passes }} passes</span>
         <span class="budget-chip">{{ a.default_per_req_attempts }} tries / req</span>
+        {% if a.schedule_cron %}
+        <span class="agent-budget-k" style="margin-left:8px">Schedule</span>
+        <span class="budget-chip" title="{{ a.schedule_question or 'no standing question set' }}">
+          <svg class="ico" style="width:10px;height:10px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 14.5a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13ZM8 4.5V8l2.5 2"/></svg>
+          {{ a.schedule_cron }}
+        </span>
+        {% if not a.schedule_question %}
+        <span class="budget-chip" style="color:var(--danger);border-color:color-mix(in oklch,var(--danger) 50%,var(--border))">needs a standing question</span>
+        {% elif next_runs.get(a.id) %}
+        <span class="budget-chip">next {{ next_runs[a.id] }}</span>
+        {% endif %}
+        {% endif %}
       </div>
 
       <form class="agent-ask" method="post" action="/agents/{{ a.id }}/run">
@@ -80,6 +92,16 @@
                placeholder="Ask {{ a.name }} to research…" aria-label="Research question">
         <button type="submit" class="btn btn-accent">Plan mission</button>
       </form>
+      {% if a.schedule_question %}
+      <form method="post" action="/agents/{{ a.id }}/run-scheduled"
+            style="padding:0 18px 12px;margin:0">
+        <button type="submit" class="btn btn-sm btn-ghost" style="width:100%"
+                title="Run the standing question now, unattended (auto-approves its plan)">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v10l8-5-8-5Z"/></svg>
+          Run scheduled question now
+        </button>
+      </form>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

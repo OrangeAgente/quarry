@@ -53,6 +53,33 @@
       flagged and the agent moves on.
     </p>
 
+    <fieldset style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:grid;gap:12px;">
+      <legend class="tweak-label" style="padding:0 6px;">Schedule <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--fg-subtle)">— optional “morning brief”</span></legend>
+      <div>
+        <label class="tweak-label" for="schedule_cron">Cron expression</label>
+        <input id="schedule_cron" name="schedule_cron" class="input" maxlength="120"
+               placeholder="e.g. 0 7 * * *  (07:00 UTC daily) — leave blank for manual only"
+               style="width:100%;font-family:var(--font-mono);"
+               value="{{ agent.schedule_cron or '' if agent else '' }}">
+        <p style="margin:6px 0 0;color:var(--fg-subtle);font-size:12px;">
+          Five fields, UTC: minute hour day month weekday. A scheduled run has
+          nobody to approve its plan, so it <strong>auto-approves</strong> and
+          collects unattended.
+        </p>
+      </div>
+      <div>
+        <label class="tweak-label" for="schedule_question">Standing question</label>
+        <input id="schedule_question" name="schedule_question" class="input" maxlength="500"
+               placeholder="What should it research on every run?"
+               style="width:100%;"
+               value="{{ agent.schedule_question or '' if agent else '' }}">
+        <p style="margin:6px 0 0;color:var(--fg-subtle);font-size:12px;">
+          Required for a schedule to fire. Each run's brief leads with what is
+          new since the previous run of this question.
+        </p>
+      </div>
+    </fieldset>
+
     <details {{ 'open' if agent else '' }}>
       <summary style="cursor:pointer;color:var(--fg-subtle);font-size:13px;">
         Advanced — {{ 'edit' if agent else 'override' }} persona prompt
