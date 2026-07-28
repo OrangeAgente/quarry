@@ -21,6 +21,19 @@ def test_unsatisfied_with_next_queries(monkeypatch):
     assert a.next_queries == ["nq1", "nq2"]
 
 
+def test_provider_exception_does_not_propagate(monkeypatch):
+    """A provider hiccup must cost the requirement an attempt, not the whole
+    mission — the crawling already paid for is far more expensive."""
+    def boom(*a, **k):
+        raise RuntimeError("Cohere_chatException - NO_VALID_RESPONSE_GENERATED")
+
+    monkeypatch.setattr(agent_assessor, "chat_json", boom)
+    a = agent_assessor.assess_requirement(_req(), [])
+    assert not a.satisfied
+    assert a.next_queries == []
+    assert "could not be completed" in a.missing
+
+
 def test_parse_failure_is_not_satisfied(monkeypatch):
     monkeypatch.setattr(agent_assessor, "chat_json", lambda s, u, **k: (None, "raw"))
     a = agent_assessor.assess_requirement(_req(), [])

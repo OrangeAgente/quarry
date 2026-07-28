@@ -118,10 +118,38 @@ runs a **Mission** against a question using an intelligence-collection loop:
   at pass boundaries so a stop still produces a brief from what was collected.
 - **Static assets are cache-busted** by mtime (`@app.url_defaults`), because a
   deploy otherwise leaves users on a stale `style.css`.
-- **Phase 2 (not yet built):** scheduling via APScheduler + delta "what's new
-  since last run" briefs. The delta plumbing already exists
-  (`get_latest_finished_mission`, `get_prior_mission_urls`, the `new_urls` arg to
-  `brief.synthesize_brief`); the scheduler and `schedule_cron` wiring are TODO.
+- **Scheduling ("morning brief")** lives in `scheduler.py`. An agent with a
+  `schedule_cron` **and** a `schedule_question` gets an APScheduler job
+  (`coalesce`, `max_instances=1`, so a missed window fires once and runs never
+  overlap). A scheduled mission carries `auto_approve` in `budget_json`:
+  `_run_planning` sees it, skips the human gate, and goes straight to
+  collecting — nobody is at the keyboard at 07:00. Each run links to the
+  previous one via `parent_mission_id`, and the brief leads with what is new
+  since that specific mission (not "any mission ever", or another agent's crawl
+  of the same URL would wrongly count as seen). `POST /agents/<id>/run-scheduled`
+  fires it now, so a brief can be tested without waiting for its cron window.
+  One scheduler exists because the image runs exactly one gunicorn worker.
+
+### Collection quality (why these exist)
+
+- **Search must not depend on one engine.** `search.py` walks
+  `settings.search_backends` (default `auto,brave,bing,duckduckgo`) until one
+  answers. Measured on this box: the `duckduckgo` backend returned **0** results
+  for a query where brave/bing returned 4 in under a second. A single-engine
+  search silently starves missions.
+- **A "successful" crawl is often a captcha wall.** `content_quality.py` is the
+  one place that judges real content vs. block/interstitial/near-empty pages,
+  shared by the crawler (before storing — junk must not consume the source
+  budget) and the assessor/brief (before prompting). `crawler.py` also enables
+  crawl4ai's stealth options, since plain headless Chromium is trivially
+  fingerprinted.
+- **One flaky LLM call must not destroy a paid-for mission.** Three layers:
+  `llm._complete_retrying` retries transient provider failures (Cohere's
+  `NO_VALID_RESPONSE_GENERATED` is common), `assess_requirement` converts an
+  exception into a "not assessed" verdict, and `agent_runner._collect_one` is
+  wrapped so a requirement's failure costs it one attempt rather than the run.
+- Extraction runs `EXTRACT_CONCURRENCY` documents at once; it was the slow tail
+  of every mission.
 
 ### Tests
 

@@ -50,16 +50,38 @@ def test_chat_ex_reports_model_that_answered(monkeypatch):
 
 
 def test_no_fallback_when_fast_equals_reasoning(monkeypatch):
-    # If no distinct fast model is set, a failure must not loop/duplicate.
+    """With no distinct fast model there is nothing to fall back *to*: the call
+    may be retried, but only ever against the one configured model."""
     monkeypatch.setattr(llm.settings, "llm_provider", "cohere/command-a-03-2025")
     monkeypatch.setattr(llm.settings, "llm_provider_fast", "")
     calls = []
 
-    def once(model, system, user, temperature, max_tokens):
+    def always_fails(model, system, user, temperature, max_tokens):
         calls.append(model)
         raise RuntimeError("down")
 
-    monkeypatch.setattr(llm, "_complete", once)
+    monkeypatch.setattr(llm, "_complete", always_fails)
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
     with pytest.raises(RuntimeError):
         llm.chat("s", "u", tier="fast")
-    assert len(calls) == 1
+    assert set(calls) == {"cohere/command-a-03-2025"}, "must not try another model"
+    assert len(calls) == llm.RETRY_ATTEMPTS, "retries only, no fallback duplication"
+
+
+def test_transient_failure_is_retried(monkeypatch):
+    """A provider that refuses once (Cohere's NO_VALID_RESPONSE_GENERATED)
+    should not cost the caller its whole mission."""
+    monkeypatch.setattr(llm.settings, "llm_provider", "cohere/command-a-03-2025")
+    monkeypatch.setattr(llm.settings, "llm_provider_fast", "")
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    calls = []
+
+    def flaky(model, system, user, temperature, max_tokens):
+        calls.append(model)
+        if len(calls) == 1:
+            raise RuntimeError("NO_VALID_RESPONSE_GENERATED")
+        return "recovered"
+
+    monkeypatch.setattr(llm, "_complete", flaky)
+    assert llm.chat("s", "u") == "recovered"
+    assert len(calls) == 2
