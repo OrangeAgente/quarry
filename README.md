@@ -2,6 +2,8 @@
 
 A small Flask app that turns a question into a searchable library of cleaned web pages and structured LLM extractions.
 
+![Quarry search — ask a question, the agent searches, crawls, and distills](docs/img/hero-search.jpg)
+
 The agent runs three stages end-to-end:
 
 1. **Search** — DuckDuckGo text search via [`ddgs`](https://pypi.org/project/ddgs/).
@@ -67,6 +69,19 @@ Providers can also be changed at runtime on the **Settings** page (`/settings`).
   - **Re-run** — re-submits the same query.
 - **Persistent sidebar** — "Live crawl" links to the most recent run (pulse dot when active); "Previous live crawls" lists earlier runs from the current process.
 - **Per-document deep view** — markdown content, metadata, links, related documents from the same search/domain, and any extractions, plus an inline button to run a new extraction with a custom prompt.
+
+![Library — every crawled page, deduplicated by URL, filterable by domain and searchable full-text](docs/img/library.jpg)
+
+### Agentic collection
+
+Beyond one-shot search, a saved **agent** runs a **mission**: it decomposes the
+question into requirements, stops at an editable approval gate, then collects
+autonomously — assessing each requirement, re-tasking the gaps, and synthesizing
+a cited brief. Completion is concrete rather than vibes: a mission ends when
+every requirement is satisfied or provably unmet, bounded by attempt and source
+budgets.
+
+![Missions — every agent run, with per-mission requirement coverage and status](docs/img/missions.jpg)
 
 ## Architecture
 
