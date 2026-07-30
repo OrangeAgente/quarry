@@ -2,17 +2,17 @@
 
 A small Flask app that turns a question into a searchable library of cleaned web pages and structured LLM extractions.
 
-![Quarry search — ask a question, the agent searches, crawls, and distills](docs/img/hero-search.png)
+![Quarry search: ask a question, the agent searches, crawls, and distills](docs/img/hero-search.png)
 
-<sub>Light theme — the UI ships both, switchable from the tweaks panel.</sub>
+<sub>Light theme. The UI ships both, switchable from the tweaks panel.</sub>
 
 ![Quarry search in the light theme](docs/img/hero-search-light.png)
 
 The agent runs three stages end-to-end:
 
-1. **Search** — DuckDuckGo text search via [`ddgs`](https://pypi.org/project/ddgs/).
-2. **Crawl** — concurrent headless Chromium fetches via [`crawl4ai`](https://github.com/unclecode/crawl4ai), producing both raw and fit-markdown.
-3. **Extract** *(optional)* — per-document LLM extraction via [`litellm`](https://github.com/BerriAI/litellm) (default provider: Cohere). Output is JSON: summary, key facts, entities, topics, sentiment — or whatever your custom prompt asks for.
+1. **Search**: DuckDuckGo text search via [`ddgs`](https://pypi.org/project/ddgs/).
+2. **Crawl**: concurrent headless Chromium fetches via [`crawl4ai`](https://github.com/unclecode/crawl4ai), producing both raw and fit-markdown.
+3. **Extract** *(optional)*: per-document LLM extraction via [`litellm`](https://github.com/BerriAI/litellm) (default provider: Cohere). Output is JSON: summary, key facts, entities, topics, sentiment, or whatever your custom prompt asks for.
 
 Everything is persisted to SQLite so you can re-open documents, re-run extractions, and revisit the search trail later.
 
@@ -20,7 +20,7 @@ Everything is persisted to SQLite so you can re-open documents, re-run extractio
 
 ```bash
 cp .env.example .env
-# edit .env — set COHERE_API_KEY (or change LLM_PROVIDER for a different vendor)
+# edit .env: set COHERE_API_KEY (or change LLM_PROVIDER for a different vendor)
 
 docker compose up -d --build
 ```
@@ -47,7 +47,7 @@ All settings come from `.env` (see `.env.example`):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `COHERE_API_KEY` | API key for hosted LLM providers | *(empty — LLM calls will fail)* |
+| `COHERE_API_KEY` | API key for hosted LLM providers | *(empty; LLM calls will fail)* |
 | `LLM_PROVIDER` | Reasoning-tier model (planning, gap assessment) | `cohere/command-a-03-2025` |
 | `LLM_PROVIDER_FAST` | Fast-tier model (brief synthesis, extraction); empty → reuse reasoning model | *(empty)* |
 | `OLLAMA_API_BASE` | Ollama endpoint for `ollama/`-prefixed models | `http://host.docker.internal:11434` |
@@ -66,33 +66,33 @@ Providers can also be changed at runtime on the **Settings** page (`/settings`).
 ## Features
 
 - **End-to-end agent run** with a live progress page showing search results, in-flight crawls, and an agent log stream.
-- **Library** — every crawled page, deduplicated by URL, with client-side filtering by domain/age/word-count and full-text search across titles + snippets.
-- **History** — every search the agent ran, grouped by day. Each entry has:
-  - **Live crawl** — opens the trace (URL stream + agent log) for that run, while the job is still in memory.
-  - **View** — opens Library filtered to just the documents from that search (`/documents?search=...`).
-  - **Re-run** — re-submits the same query.
-- **Persistent sidebar** — "Live crawl" links to the most recent run (pulse dot when active); "Previous live crawls" lists earlier runs from the current process.
-- **Per-document deep view** — markdown content, metadata, links, related documents from the same search/domain, and any extractions, plus an inline button to run a new extraction with a custom prompt.
+- **Library**: every crawled page, deduplicated by URL, with client-side filtering by domain/age/word-count and full-text search across titles + snippets.
+- **History**: every search the agent ran, grouped by day. Each entry has:
+  - **Live crawl**: opens the trace (URL stream + agent log) for that run, while the job is still in memory.
+  - **View**: opens Library filtered to just the documents from that search (`/documents?search=...`).
+  - **Re-run**: re-submits the same query.
+- **Persistent sidebar**: "Live crawl" links to the most recent run (pulse dot when active); "Previous live crawls" lists earlier runs from the current process.
+- **Per-document deep view**: markdown content, metadata, links, related documents from the same search/domain, and any extractions, plus an inline button to run a new extraction with a custom prompt.
 
-![Library — every crawled page, deduplicated by URL, filterable by domain and searchable full-text](docs/img/library.png)
+![Library: every crawled page, deduplicated by URL, filterable by domain and searchable full-text](docs/img/library.png)
 
 ### Agentic collection
 
 Beyond one-shot search, a saved **agent** runs a **mission**: it decomposes the
 question into requirements, stops at an editable approval gate, then collects
-autonomously — assessing each requirement, re-tasking the gaps, and synthesizing
+autonomously, assessing each requirement, re-tasking the gaps, and synthesizing
 a cited brief. Completion is concrete rather than vibes: a mission ends when
 every requirement is satisfied or provably unmet, bounded by attempt and source
 budgets.
 
-An agent is just a name, an area of expertise, and a budget — the persona is
+An agent is just a name, an area of expertise, and a budget; the persona is
 generated from the expertise. Give one a cron expression and a standing question
 and it runs unattended, each brief leading with what changed since its own last
 run.
 
-![Expert agents — each with an area of expertise and its own collection budget](docs/img/agents.png)
+![Expert agents: each with an area of expertise and its own collection budget](docs/img/agents.png)
 
-![Missions — every agent run, with per-mission requirement coverage and status](docs/img/missions.png)
+![Missions: every agent run, with per-mission requirement coverage and status](docs/img/missions.png)
 
 ## Architecture
 
@@ -105,8 +105,8 @@ crawler.py        crawl4ai async wrapper; emits per-URL progress to the job stor
 extractor.py      LiteLLM call; tries to parse JSON, falls back to {"raw_response": ...}.
 jobs.py           In-memory job store + threaded async runner.
                   Tracks recent job IDs for the sidebar.
-storage.py        aiosqlite — documents / extractions / searches tables.
-templates/        Jinja2 — base.html (shell + sidebar) extended by per-page templates.
+storage.py        aiosqlite: documents / extractions / searches tables.
+templates/        Jinja2: base.html (shell + sidebar) extended by per-page templates.
 static/style.css  Hand-rolled CSS, supports light/dark themes + accent swatches.
 ```
 
@@ -130,24 +130,24 @@ searches        one row per agent run, with job_id back-reference for trace look
 
 Designed for **single-user local use** behind a firewall. Some specifics:
 
-- **No authentication.** Anyone who can reach the port can run searches and burn your LLM API quota. Docker publishes on `127.0.0.1` by default (`QUARRY_BIND`), so the app is reachable only from the host machine. If you widen that, put it behind Tailscale or a reverse proxy with auth — never expose it directly to the internet.
-- **`FLASK_DEBUG` defaults to `false`** in `.env.example`. Never set it to `true` on a host reachable from untrusted networks — Werkzeug's debugger console is an RCE primitive.
+- **No authentication.** Anyone who can reach the port can run searches and burn your LLM API quota. Docker publishes on `127.0.0.1` by default (`QUARRY_BIND`), so the app is reachable only from the host machine. If you widen that, put it behind Tailscale or a reverse proxy with auth. Never expose it directly to the internet.
+- **`FLASK_DEBUG` defaults to `false`** in `.env.example`. Never set it to `true` on a host reachable from untrusted networks; Werkzeug's debugger console is an RCE primitive.
 - **Crawled HTML is treated as untrusted.** Page titles, URLs, and error strings are HTML-escaped before being inserted into the live agent log. Server-side templates use Jinja autoescape throughout.
 - **Inputs are bounded:** query ≤ 500 chars, extraction prompt ≤ 5000 chars, `max_results` clamped to 1–20.
 - **`flask_secret_key` is randomized per process start** unless you set `FLASK_SECRET_KEY` in `.env`. Sessions/flash messages reset on restart (they're not persistent here, so that's fine).
 - **Container runs as a non-root `app` user** (UID 1000). The bind-mounted `data/` directory must be writable by that UID on the host.
-- **Prompt injection is possible** — the LLM extractor sees raw page content. Treat extraction output as suggestion, not ground truth. Don't pipe it into anything that auto-executes.
+- **Prompt injection is possible**: the LLM extractor sees raw page content. Treat extraction output as suggestion, not ground truth. Don't pipe it into anything that auto-executes.
 - **No CSRF tokens.** Acceptable for a localhost-only app where the SameSite=Lax default on session cookies blocks the relevant cross-site POST scenarios. If you front this with a real domain and add auth, add CSRF tokens too.
-- **DDG returns external URLs only.** No allowlist on what the crawler will fetch — a crafted query could in theory point the crawler at a private network address. Out of scope today; consider an SSRF guard if you ever expose this.
+- **DDG returns external URLs only.** No allowlist on what the crawler will fetch; a crafted query could in theory point the crawler at a private network address. Out of scope today; consider an SSRF guard if you ever expose this.
 
 ## Notes & caveats
 
 - **In-memory job store.** URL streams, log entries, and the sidebar's "Previous live crawls" list reset when the Flask process restarts. The DB persists; the live trace does not. The History → Live Crawl button auto-hides for jobs no longer in memory.
 - **DuckDuckGo rate limiting.** Heavy use can return zero results temporarily; the agent surfaces this as `no search results`.
 - **Extraction context window.** Documents are truncated to ~20k chars before being sent to the LLM (see `extractor.py`).
-- **Single-user design.** The job store and "recent crawls" tracker are global module state — fine for local use, not safe for multi-user deployments.
-- **Production WSGI.** The Docker image runs gunicorn (1 worker × 16 threads). The worker count must stay at 1 — the live crawl/mission trace is held in process memory, so multiple workers would split state. `python app.py` still uses Flask's dev server for local development.
+- **Single-user design.** The job store and "recent crawls" tracker are global module state, which is fine for local use but not safe for multi-user deployments.
+- **Production WSGI.** The Docker image runs gunicorn (1 worker × 16 threads). The worker count must stay at 1 because the live crawl/mission trace is held in process memory, so multiple workers would split state. `python app.py` still uses Flask's dev server for local development.
 
 ## License
 
-Not licensed for redistribution by default — add a `LICENSE` file if you intend to publish.
+Released under the MIT License. See [LICENSE](LICENSE).
