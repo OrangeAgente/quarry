@@ -2,11 +2,11 @@
 
 A small Flask app that turns a question into a searchable library of cleaned web pages and structured LLM extractions.
 
-![Quarry search — ask a question, the agent searches, crawls, and distills](docs/img/hero-search.jpg)
+![Quarry search — ask a question, the agent searches, crawls, and distills](docs/img/hero-search.png)
 
 <sub>Light theme — the UI ships both, switchable from the tweaks panel.</sub>
 
-![Quarry search in the light theme](docs/img/hero-search-light.jpg)
+![Quarry search in the light theme](docs/img/hero-search-light.png)
 
 The agent runs three stages end-to-end:
 
@@ -74,7 +74,7 @@ Providers can also be changed at runtime on the **Settings** page (`/settings`).
 - **Persistent sidebar** — "Live crawl" links to the most recent run (pulse dot when active); "Previous live crawls" lists earlier runs from the current process.
 - **Per-document deep view** — markdown content, metadata, links, related documents from the same search/domain, and any extractions, plus an inline button to run a new extraction with a custom prompt.
 
-![Library — every crawled page, deduplicated by URL, filterable by domain and searchable full-text](docs/img/library.jpg)
+![Library — every crawled page, deduplicated by URL, filterable by domain and searchable full-text](docs/img/library.png)
 
 ### Agentic collection
 
@@ -90,9 +90,9 @@ generated from the expertise. Give one a cron expression and a standing question
 and it runs unattended, each brief leading with what changed since its own last
 run.
 
-![Expert agents — each with an area of expertise and its own collection budget](docs/img/agents.jpg)
+![Expert agents — each with an area of expertise and its own collection budget](docs/img/agents.png)
 
-![Missions — every agent run, with per-mission requirement coverage and status](docs/img/missions.jpg)
+![Missions — every agent run, with per-mission requirement coverage and status](docs/img/missions.png)
 
 ## Architecture
 
