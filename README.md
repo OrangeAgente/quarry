@@ -4,6 +4,10 @@ A small Flask app that turns a question into a searchable library of cleaned web
 
 ![Quarry search — ask a question, the agent searches, crawls, and distills](docs/img/hero-search.jpg)
 
+<sub>Light theme — the UI ships both, switchable from the tweaks panel.</sub>
+
+![Quarry search in the light theme](docs/img/hero-search-light.jpg)
+
 The agent runs three stages end-to-end:
 
 1. **Search** — DuckDuckGo text search via [`ddgs`](https://pypi.org/project/ddgs/).
@@ -80,6 +84,13 @@ autonomously — assessing each requirement, re-tasking the gaps, and synthesizi
 a cited brief. Completion is concrete rather than vibes: a mission ends when
 every requirement is satisfied or provably unmet, bounded by attempt and source
 budgets.
+
+An agent is just a name, an area of expertise, and a budget — the persona is
+generated from the expertise. Give one a cron expression and a standing question
+and it runs unattended, each brief leading with what changed since its own last
+run.
+
+![Expert agents — each with an area of expertise and its own collection budget](docs/img/agents.jpg)
 
 ![Missions — every agent run, with per-mission requirement coverage and status](docs/img/missions.jpg)
 
