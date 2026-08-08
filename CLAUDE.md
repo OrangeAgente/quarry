@@ -48,7 +48,7 @@ The crawl page polls `GET /api/job/<id>` (~500ms) and there is also an SSE endpo
 ### LLM extraction (`extractor.py`)
 
 - Uses **LiteLLM** (`litellm.completion`) with `settings.llm_provider` as the model id. Switch vendors by changing `LLM_PROVIDER` (e.g. `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`) and setting the vendor's API key env var.
-- Note: the api key is always passed as `settings.cohere_api_key` (`extractor.py:54`) — for non-Cohere providers LiteLLM reads the vendor key from the environment instead, so the explicit arg is harmless but Cohere-specific.
+- The key is provider-agnostic: `config.active_api_key()` returns `LLM_API_KEY`, falling back to the legacy `COHERE_API_KEY`. When it is empty no `api_key` kwarg is passed at all, so LiteLLM reads the vendor's own env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …). Ollama needs no key.
 - Content is **truncated to 20k chars** before the call. Output is parsed as JSON; on parse failure it's wrapped as `{"raw_response": ...}` rather than failing.
 
 ## Agentic collection (expert agents)
@@ -88,7 +88,7 @@ runs a **Mission** against a question using an intelligence-collection loop:
   optional — empty `LLM_PROVIDER_FAST` falls back to the reasoning model.
   `_provider_kwargs` branches on the model id: Ollama models
   (`ollama/`, `ollama_chat/`) get `ollama_api_base` and no key; hosted providers
-  get `cohere_api_key`. A local Ollama is reachable from the container at
+  get `active_api_key()`. A local Ollama is reachable from the container at
   `http://host.docker.internal:11434` on Docker Desktop. `model_for(tier)`
   resolves the id. **Fast-tier calls auto-fall back to the reasoning model** on
   provider failure (e.g. Ollama down); `chat_ex` returns
@@ -215,7 +215,7 @@ docker compose exec -T web-researcher python /tmp/x.py`.
 
 All settings come from `.env` via Pydantic Settings (`config.py`). The singleton `settings` is imported across modules. Key vars: `COHERE_API_KEY`, `LLM_PROVIDER`, `LLM_PROVIDER_FAST`, `OLLAMA_API_BASE`, `DB_PATH` (default `data/research.db`), `CRAWL_TIMEOUT` (ms), `FLASK_HOST/PORT/DEBUG`, `FLASK_SECRET_KEY`, `QUARRY_BIND` (compose-level publish interface). Never set `FLASK_DEBUG=true` on a network-reachable host (Werkzeug console is an RCE primitive).
 
-**UI-editable overrides:** the Settings page (`/settings`) persists `llm_provider`, `llm_provider_fast`, `ollama_api_base`, `cohere_api_key`, and `search_max_results` to `data/settings.json` (`config.save_overrides`), which is layered over `.env` at import (`load_overrides`) and mutated live on save — **`settings.json` wins over `.env`** for those keys. `known_models()` accumulates every model id ever saved so the Settings dropdowns never lose a previously used value.
+**UI-editable overrides:** the Settings page (`/settings`) persists `llm_provider`, `llm_provider_fast`, `ollama_api_base`, `llm_api_key` (legacy `cohere_api_key` still read), and `search_max_results` to `data/settings.json` (`config.save_overrides`), which is layered over `.env` at import (`load_overrides`) and mutated live on save — **`settings.json` wins over `.env`** for those keys. `known_models()` accumulates every model id ever saved so the Settings dropdowns never lose a previously used value.
 
 ## Deployment notes
 

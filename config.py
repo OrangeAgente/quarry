@@ -8,7 +8,11 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    cohere_api_key: str = ""
+    # API key for whichever hosted LLM provider you point LLM_PROVIDER at.
+    # Provider-agnostic: LLM_API_KEY is the name to use. COHERE_API_KEY is kept
+    # working because early versions assumed Cohere. Local Ollama needs no key.
+    llm_api_key: str = ""
+    cohere_api_key: str = ""  # deprecated alias for llm_api_key
     llm_provider: str = "cohere/command-a-03-2025"
     # Optional "fast" tier for summarization-style calls (brief, extraction).
     # Empty -> those calls fall back to llm_provider. For a local Ollama model
@@ -51,8 +55,16 @@ settings = Settings()
 # and mutated live on save. These take precedence over .env.
 OVERRIDE_KEYS = (
     "llm_provider", "llm_provider_fast", "ollama_api_base",
-    "cohere_api_key", "search_max_results",
+    "llm_api_key", "cohere_api_key", "search_max_results",
 )
+
+
+def active_api_key() -> str:
+    """The key handed to hosted providers. Prefers the provider-agnostic
+    LLM_API_KEY, falling back to the legacy COHERE_API_KEY so existing installs
+    keep working. Empty is fine for Ollama, and for hosted providers LiteLLM
+    will still read its own env var (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...)."""
+    return (settings.llm_api_key or settings.cohere_api_key or "").strip()
 
 # Seed suggestions for the Settings model dropdowns; user-used models are added.
 DEFAULT_KNOWN_MODELS = [

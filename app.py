@@ -13,7 +13,8 @@ from flask import (Flask, Response, render_template, request, redirect,
                    url_for, flash, session, stream_with_context)
 
 import auth
-from config import settings, save_overrides, known_models, persistent_secret_key
+from config import (settings, save_overrides, known_models,
+                    persistent_secret_key, active_api_key)
 from search import web_search
 from crawler import crawl_urls
 from storage import (
@@ -995,16 +996,16 @@ def settings_page():
         except (TypeError, ValueError):
             vals["search_max_results"] = settings.search_max_results
         # Only overwrite the API key when a new one is supplied.
-        key = request.form.get("cohere_api_key", "").strip()
+        key = request.form.get("llm_api_key", "").strip()
         if key:
-            vals["cohere_api_key"] = key
+            vals["llm_api_key"] = key
         save_overrides(vals)
         flash("Settings saved — applied immediately, no restart needed.", "success")
         return redirect(url_for("settings_page"))
 
     return render_template(
         "settings.html", s=settings, models=known_models(),
-        has_key=bool(settings.cohere_api_key), active_page="settings",
+        has_key=bool(active_api_key()), active_page="settings",
     )
 
 

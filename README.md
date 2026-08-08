@@ -12,7 +12,7 @@ The agent runs three stages end-to-end:
 
 1. **Search**: DuckDuckGo text search via [`ddgs`](https://pypi.org/project/ddgs/).
 2. **Crawl**: concurrent headless Chromium fetches via [`crawl4ai`](https://github.com/unclecode/crawl4ai), producing both raw and fit-markdown.
-3. **Extract** *(optional)*: per-document LLM extraction via [`litellm`](https://github.com/BerriAI/litellm) (default provider: Cohere). Output is JSON: summary, key facts, entities, topics, sentiment, or whatever your custom prompt asks for.
+3. **Extract** *(optional)*: per-document LLM extraction via [`litellm`](https://github.com/BerriAI/litellm), so you can use any supported provider (or a fully local model). Output is JSON: summary, key facts, entities, topics, sentiment, or whatever your custom prompt asks for.
 
 Everything is persisted to SQLite so you can re-open documents, re-run extractions, and revisit the search trail later.
 
@@ -20,7 +20,7 @@ Everything is persisted to SQLite so you can re-open documents, re-run extractio
 
 ```bash
 cp .env.example .env
-# edit .env: set COHERE_API_KEY (or change LLM_PROVIDER for a different vendor)
+# edit .env: pick an LLM_PROVIDER and set LLM_API_KEY (see "Choosing a provider")
 
 docker compose up -d --build
 ```
@@ -47,7 +47,7 @@ All settings come from `.env` (see `.env.example`):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `COHERE_API_KEY` | API key for hosted LLM providers | *(empty; LLM calls will fail)* |
+| `LLM_API_KEY` | API key for the hosted provider you chose (not needed for Ollama) | *(empty)* |
 | `LLM_PROVIDER` | Reasoning-tier model (planning, gap assessment) | `cohere/command-a-03-2025` |
 | `LLM_PROVIDER_FAST` | Fast-tier model (brief synthesis, extraction); empty → reuse reasoning model | *(empty)* |
 | `OLLAMA_API_BASE` | Ollama endpoint for `ollama/`-prefixed models | `http://host.docker.internal:11434` |
@@ -57,11 +57,41 @@ All settings come from `.env` (see `.env.example`):
 | `CRAWL_TIMEOUT` | Per-page crawl timeout (ms) | `30000` |
 | `FLASK_HOST` / `FLASK_PORT` | Bind address | `0.0.0.0:5000` |
 | `FLASK_DEBUG` | Flask debug + auto-reload | `false` |
-| `FLASK_SECRET_KEY` | Override Flask session signing key. Empty → fresh random key per process start | *(empty)* |
+| `FLASK_SECRET_KEY` | Override Flask session signing key. Empty → generated once into `data/secret_key` | *(empty)* |
+| `QUARRY_PASSWORD` | Optional login password. Empty → no login | *(empty)* |
+| `QUARRY_BEHIND_PROXY` | Behind a TLS-terminating reverse proxy (ProxyFix + Secure cookie) | `false` |
 
-Switching LLM provider: anything LiteLLM supports works (e.g. `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`). Set the matching `*_API_KEY` env var that LiteLLM expects for that vendor.
+### Choosing an LLM provider
 
-Providers can also be changed at runtime on the **Settings** page (`/settings`). Those choices persist to `data/settings.json`, apply immediately, and take precedence over `.env`. If the fast tier fails (e.g. local Ollama is down), calls automatically fall back to the reasoning model.
+Quarry calls LLMs through LiteLLM, so **no vendor is required** — pick one, set
+`LLM_PROVIDER`, and put that vendor's key in `LLM_API_KEY`:
+
+| Provider | `LLM_PROVIDER` | Get an API key |
+| --- | --- | --- |
+| Cohere | `cohere/command-a-03-2025` | [dashboard.cohere.com/api-keys](https://dashboard.cohere.com/api-keys) |
+| OpenAI | `openai/gpt-4o-mini` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| Anthropic | `anthropic/claude-sonnet-4-5` | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) |
+| Google | `gemini/gemini-2.0-flash` | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) |
+| Groq | `groq/llama-3.3-70b-versatile` | [console.groq.com/keys](https://console.groq.com/keys) |
+| **Ollama (local)** | `ollama_chat/qwen2.5:14b` | **none — runs on your machine** |
+
+**No API key at all?** Install [Ollama](https://ollama.com), run
+`ollama pull qwen2.5:14b`, set `LLM_PROVIDER=ollama_chat/qwen2.5:14b`, and leave
+`LLM_API_KEY` empty. Everything works locally and free.
+
+If you already use a vendor's standard variable (`OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, …), leave `LLM_API_KEY` blank and LiteLLM will pick it up.
+
+**Two tiers.** `LLM_PROVIDER` handles planning and gap assessment; the optional
+`LLM_PROVIDER_FAST` handles brief synthesis and extraction. Pointing the fast
+tier at a local Ollama model keeps the high-volume calls free while a stronger
+hosted model does the reasoning. If the fast tier fails (Ollama down), calls
+fall back to the reasoning model automatically.
+
+Providers and the key can also be changed at runtime on the **Settings** page
+(`/settings`), which links to each vendor's key page. Those choices persist to
+`data/settings.json` (never the repo), apply immediately, and take precedence
+over `.env`.
 
 ## Features
 

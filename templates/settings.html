@@ -49,14 +49,26 @@
     </div>
 
     <div>
-      <label class="tweak-label" for="cohere_api_key">Hosted-provider API key</label>
-      <input id="cohere_api_key" name="cohere_api_key" type="password" class="select" style="width:100%;"
-             placeholder="{{ '•••••••• set — leave blank to keep' if has_key else 'not set' }}">
+      <label class="tweak-label" for="llm_api_key">API key</label>
+      <input id="llm_api_key" name="llm_api_key" type="password" class="select" style="width:100%;"
+             placeholder="{{ '•••••••• set — leave blank to keep' if has_key else 'not set — needed for hosted providers' }}"
+             autocomplete="off">
       <p style="margin:6px 0 0; color:var(--fg-subtle); font-size:12px;">
-        Passed to Cohere-style providers. Stored in the data volume; leave blank to
-        keep the current key. (For OpenAI/Anthropic, LiteLLM also reads
-        <code>OPENAI_API_KEY</code>/<code>ANTHROPIC_API_KEY</code> from the environment.)
+        For whichever hosted provider you chose above. <strong>Not needed for
+        Ollama</strong> (it runs locally). Leave blank to keep the current key.
+        Stored in the data volume, not in the repo.
       </p>
+      <details style="margin-top:8px;">
+        <summary style="cursor:pointer;color:var(--fg-subtle);font-size:12px;">Where do I get a key?</summary>
+        <ul style="margin:8px 0 0;padding-left:18px;color:var(--fg-subtle);font-size:12px;line-height:1.7;">
+          <li><strong>Cohere</strong> — <a href="https://dashboard.cohere.com/api-keys" target="_blank" rel="noopener noreferrer">dashboard.cohere.com/api-keys</a></li>
+          <li><strong>OpenAI</strong> — <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a></li>
+          <li><strong>Anthropic</strong> — <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com/settings/keys</a></li>
+          <li><strong>Google AI Studio</strong> — <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/app/apikey</a></li>
+          <li><strong>Groq</strong> — <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com/keys</a></li>
+          <li><strong>Ollama</strong> — no key; install from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">ollama.com</a> and use an <code>ollama_chat/…</code> model</li>
+        </ul>
+      </details>
     </div>
 
     <div>

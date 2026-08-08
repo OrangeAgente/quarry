@@ -12,7 +12,7 @@ from typing import Optional
 
 import litellm
 
-from config import settings
+from config import settings, active_api_key
 
 
 def model_for(tier: str = "reasoning") -> str:
@@ -25,11 +25,14 @@ def model_for(tier: str = "reasoning") -> str:
 
 
 def _provider_kwargs(model: str) -> dict:
-    """litellm kwargs that depend on the provider: Ollama needs api_base and no
-    key; hosted providers (Cohere, etc.) get the key."""
+    """litellm kwargs that depend on the provider: a local Ollama needs an
+    api_base and no key; hosted providers get the configured key. When no key
+    is set we pass none at all, so LiteLLM falls back to the vendor's own env
+    var (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...)."""
     if model.startswith(("ollama/", "ollama_chat/")):
         return {"api_base": settings.ollama_api_base}
-    return {"api_key": settings.cohere_api_key}
+    key = active_api_key()
+    return {"api_key": key} if key else {}
 
 
 RETRY_ATTEMPTS = 2
