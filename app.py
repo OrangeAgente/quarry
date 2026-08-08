@@ -42,7 +42,7 @@ from brief import ordered_sources, linkify_citations
 from scheduler import (start_scheduler, sync_agent_jobs, validate_cron,
                        describe_next_run, scheduled_jobs,
                        run_scheduled_agent_now)
-from markdown_render import render_markdown, to_plain_text
+from markdown_render import render_markdown, to_plain_text, snippet
 from models import SearchRecord, Agent, Mission, Requirement
 from prompt_templates import build_persona
 
@@ -494,9 +494,16 @@ def documents_list():
     search_queries = run_async(get_distinct_search_queries())
     missions = run_async(list_missions())
 
+    # Readable card previews: the fit-markdown is already pruned of nav, so
+    # prefer it; either way strip the markup rather than showing its source.
+    snippets = {
+        d.id: snippet(d.content_fit or d.content_markdown or "")
+        for d in documents
+    }
+
     return render_template(
         "documents.html",
-        documents=documents,
+        documents=documents, snippets=snippets,
         ext_ids=ext_ids,
         domain_counts=domain_counts,
         search_filter=search_filter,

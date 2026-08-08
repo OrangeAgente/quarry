@@ -1676,3 +1676,7 @@ h1.page-title em { font-style: italic; color: var(--accent); }
 .retask-form input{background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-family:var(--font-mono);font-size:11px;color:var(--fg);min-width:210px}
 .retask-form input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .retask-form input::placeholder{color:var(--fg-subtle)}
+
+/* ---------- Library card footer ----------
+   The date/word-count tokens must never break mid-value ("2026-07-" / "28"). */
+.doc-card-foot .nowrap{white-space:nowrap;flex-shrink:0}

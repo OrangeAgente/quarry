@@ -105,7 +105,7 @@
     <a href="/document/{{ doc.id }}" class="doc-card"
        data-title="{{ (doc.title or doc.domain)|lower }}"
        data-domain="{{ doc.domain }}"
-       data-snippet="{{ (doc.content_markdown[:400] if doc.content_markdown else '')|lower }}"
+       data-snippet="{{ snippets.get(doc.id, '')|lower }}"
        data-words="{{ doc.word_count or 0 }}"
        data-crawled="{{ doc.crawled_at }}">
       <div class="doc-card-head">
@@ -116,11 +116,11 @@
         {% endif %}
       </div>
       <div class="doc-card-title">{{ doc.title or doc.domain }}</div>
-      <div class="doc-card-snippet">{{ doc.content_markdown[:150] if doc.content_markdown else 'No content' }}</div>
+      <div class="doc-card-snippet">{{ snippets.get(doc.id) or 'No readable text extracted' }}</div>
       <div class="doc-card-foot">
-        <span>{{ doc.crawled_at[:10] }}</span>
+        <span class="nowrap">{{ doc.crawled_at[:10] }}</span>
         <span class="sep">&middot;</span>
-        <span>{{ doc.word_count }}w</span>
+        <span class="nowrap">{{ doc.word_count }}w</span>
         <span class="sep">&middot;</span>
         <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ doc.search_query }}</span>
       </div>
