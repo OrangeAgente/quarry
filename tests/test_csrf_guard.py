@@ -17,6 +17,14 @@ def test_cross_site_origin_blocked(tmp_path):
     assert r.status_code == 403
 
 
+def test_null_origin_blocked(tmp_path):
+    # A sandboxed-iframe form post sends "Origin: null"; a legitimate
+    # same-origin form post never does (audit finding).
+    client = _client(tmp_path)
+    r = client.post("/search", data={"query": "x"}, headers={"Origin": "null"})
+    assert r.status_code == 403
+
+
 def test_cross_site_fetch_metadata_blocked(tmp_path):
     client = _client(tmp_path)
     r = client.post("/search", data={"query": "x"},

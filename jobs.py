@@ -59,6 +59,37 @@ _lock = threading.Lock()
 _recent_job_ids: list[str] = []
 _RECENT_LIMIT = 10
 
+# Every live job is a daemon thread plus (during crawl) a headless Chromium.
+# Cap what can be in flight, and evict old finished traces so _store cannot
+# grow for the life of the process (security audit: unbounded job creation).
+MAX_ACTIVE_JOBS = 6
+_DONE_KEEP = 40                 # most recent finished traces kept for the UI
+_DONE_TTL_S = 6 * 60 * 60      # ...or until they age out
+
+
+class JobLimitReached(RuntimeError):
+    """Raised when too many jobs are already running."""
+
+
+def _prune_locked() -> None:
+    """Caller holds _lock. Drop finished jobs beyond the keep-window; pages
+    degrade to their DB-rendered form exactly as after a restart."""
+    done = sorted((j for j in _store.values() if j.done),
+                  key=lambda j: j.started_at, reverse=True)
+    now = time.time()
+    for i, j in enumerate(done):
+        if i >= _DONE_KEEP or now - j.started_at > _DONE_TTL_S:
+            _store.pop(j.id, None)
+
+
+def _admit_locked() -> None:
+    """Caller holds _lock. Refuse a new job when the in-flight cap is hit."""
+    active = sum(1 for j in _store.values() if not j.done)
+    if active >= MAX_ACTIVE_JOBS:
+        raise JobLimitReached(
+            f"{active} jobs already running (max {MAX_ACTIVE_JOBS}) — "
+            "wait for one to finish")
+
 
 def create_job(query: str, max_results: int, extract: bool, extract_prompt: str) -> str:
     job = Job(
@@ -70,6 +101,8 @@ def create_job(query: str, max_results: int, extract: bool, extract_prompt: str)
         started_at=time.time(),
     )
     with _lock:
+        _admit_locked()
+        _prune_locked()
         _store[job.id] = job
         _recent_job_ids.insert(0, job.id)
         del _recent_job_ids[_RECENT_LIMIT:]
@@ -90,6 +123,8 @@ def create_mission_job(question: str, max_sources: int) -> str:
         crawl_total=max_sources,
     )
     with _lock:
+        _admit_locked()
+        _prune_locked()
         _store[job.id] = job
     return job.id
 

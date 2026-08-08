@@ -10,8 +10,13 @@ RUN useradd -m -u 1000 -s /bin/bash app
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# requirements.txt names the direct dependencies; constraints.txt pins the
+# entire tree (pip freeze of a verified-working image) so rebuilds are
+# reproducible and an upstream release can't land silently — bleach is the
+# app's XSS control, so surprise bumps there are security-relevant.
+# Refresh deliberately: rebuild, verify, then `pip freeze > constraints.txt`.
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 # Install Chromium's OS-level dependencies as root. The unprivileged app user
 # cannot apt-install, which is why crawl4ai-setup's dependency step failed

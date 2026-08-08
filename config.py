@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Deliberately NOT in OVERRIDE_KEYS: the Settings page must never be able
     # to set or clear it, or an unauthenticated visitor could.
     quarry_password: str = ""
+    # Set true when serving behind a TLS-terminating reverse proxy: applies
+    # ProxyFix (real client IPs for the login rate limiter) and marks the
+    # session cookie Secure. Off for plain localhost HTTP.
+    quarry_behind_proxy: bool = False
+    # Mirrors the compose-level publish interface (env_file passes it through)
+    # so the app can warn when it is exposed beyond loopback without a password.
+    quarry_bind: str = "127.0.0.1"
 
     class Config:
         env_file = ".env"

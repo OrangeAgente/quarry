@@ -100,6 +100,21 @@ def test_no_open_redirect(client, monkeypatch):
     assert "evil.example" not in r.headers["Location"]
 
 
+def test_insecure_exposure_flag(client, monkeypatch):
+    import app as app_mod
+    # exposed + no password -> flagged
+    monkeypatch.setattr(auth.settings, "quarry_bind", "0.0.0.0")
+    monkeypatch.setattr(auth.settings, "quarry_password", "")
+    assert app_mod.insecure_exposure() is True
+    # exposed + password -> fine
+    monkeypatch.setattr(auth.settings, "quarry_password", "pw")
+    assert app_mod.insecure_exposure() is False
+    # loopback + no password -> fine (the default posture)
+    monkeypatch.setattr(auth.settings, "quarry_password", "")
+    monkeypatch.setattr(auth.settings, "quarry_bind", "127.0.0.1")
+    assert app_mod.insecure_exposure() is False
+
+
 def test_security_headers_present(client, monkeypatch):
     monkeypatch.setattr(auth.settings, "quarry_password", "")
     r = client.get("/")

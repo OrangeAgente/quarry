@@ -119,6 +119,14 @@
       </div>
 
       <!-- Page content -->
+      {% if insecure_exposure %}
+      <div style="margin:16px 32px 0;padding:10px 14px;border:1px solid var(--danger);background:var(--danger-soft);border-radius:10px;font-size:13px;color:var(--fg);">
+        <strong style="color:var(--danger)">Exposed without a password.</strong>
+        QUARRY_BIND publishes this app beyond localhost but QUARRY_PASSWORD is not set —
+        anyone on the network can run crawls and spend your LLM quota. Set a password in
+        <code>.env</code> or revert QUARRY_BIND to <code>127.0.0.1</code>.
+      </div>
+      {% endif %}
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div style="padding: 16px 32px 0;">

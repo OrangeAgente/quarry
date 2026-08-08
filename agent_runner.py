@@ -276,8 +276,11 @@ async def _collect_one(mission, req, collected, job_urls, job_id,
         )
         if job_id:
             label = "unmet (capped)" if status == "unmet" else "gap remains"
+            # confidence is an unconstrained LLM string — escape it like any
+            # other untrusted interpolation (audit finding: the one gap in the
+            # otherwise-consistent _esc invariant).
             jobs.add_log(job_id, "warn",
-                         f"{label} ({assessment.confidence}): <em>{_esc(req.title)}</em>")
+                         f"{label} ({_esc(str(assessment.confidence))}): <em>{_esc(req.title)}</em>")
 
 
 EXTRACT_CONCURRENCY = 4

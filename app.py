@@ -34,7 +34,7 @@ from storage import (
 from jobs import (
     create_job, get_job, job_state, run_job_in_background,
     get_sidebar_jobs, get_in_memory_job_ids, create_mission_job,
-    request_cancel,
+    request_cancel, JobLimitReached,
 )
 from agent_runner import start_planning, start_collection
 from brief import ordered_sources, linkify_citations
@@ -54,6 +54,27 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
+if settings.quarry_behind_proxy:
+    # TLS-proxy deployment mode: trust one proxy hop so the login rate limiter
+    # sees real client IPs (not the proxy collapsing everyone into one bucket),
+    # and mark the session cookie Secure since TLS terminates upstream.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config["SESSION_COOKIE_SECURE"] = True
+
+
+def insecure_exposure() -> bool:
+    """True when the compose publish interface is non-loopback but no password
+    is set — the one-line footgun the security audit flagged."""
+    bind = (settings.quarry_bind or "127.0.0.1").strip()
+    return bind not in ("127.0.0.1", "localhost", "::1", "") and not auth.enabled()
+
+
+if insecure_exposure():
+    print("=" * 70 + f"\n[SECURITY] QUARRY_BIND={settings.quarry_bind} exposes this app "
+          "beyond localhost WITHOUT a password.\n[SECURITY] Set QUARRY_PASSWORD in .env "
+          "or revert QUARRY_BIND to 127.0.0.1.\n" + "=" * 70,
+          file=sys.stderr, flush=True)
 
 
 @app.context_processor
@@ -79,6 +100,7 @@ def inject_globals():
             live_job=sidebar["live"],
             previous_jobs=sidebar["previous"],
             auth_enabled=auth.enabled(),
+            insecure_exposure=insecure_exposure(),
         )
     except Exception:
         return dict(
@@ -87,6 +109,7 @@ def inject_globals():
             llm_fast_model="—", default_results=5,
             live_job=None, previous_jobs=[],
             auth_enabled=auth.enabled(),
+            insecure_exposure=insecure_exposure(),
         )
 
 
@@ -127,9 +150,11 @@ def block_cross_site_posts():
     if sfs and sfs not in ("same-origin", "same-site", "none"):
         return "Cross-site POST blocked", 403
     origin = request.headers.get("Origin")
-    if origin and origin != "null":
+    if origin:
+        # "Origin: null" comes from sandboxed iframes / opaque origins — never
+        # from a legitimate same-origin form post. Treat it as cross-site.
         from urllib.parse import urlparse
-        if urlparse(origin).netloc != request.host:
+        if origin == "null" or urlparse(origin).netloc != request.host:
             return "Cross-site POST blocked", 403
     return None
 
@@ -249,7 +274,11 @@ def search():
         flash("Please enter a search query.", "error")
         return redirect(url_for("index"))
 
-    job_id = create_job(query, max_results, extract, extract_prompt)
+    try:
+        job_id = create_job(query, max_results, extract, extract_prompt)
+    except JobLimitReached as e:
+        flash(f"Busy: {e}.", "error")
+        return redirect(url_for("index"))
     run_job_in_background(job_id)
     return redirect(url_for("crawl_view", job_id=job_id))
 
@@ -635,7 +664,11 @@ def agent_run(agent_id):
     extract = request.form.get("extract") == "on"
     extract_prompt = request.form.get("extract_prompt", "").strip()[:5000]
 
-    job_id = create_mission_job(question, max_sources)
+    try:
+        job_id = create_mission_job(question, max_sources)
+    except JobLimitReached as e:
+        flash(f"Busy: {e}.", "error")
+        return redirect(url_for("agents_list"))
     mission = Mission(
         id=str(uuid.uuid4()), agent_id=agent.id, question=question,
         status="planning", job_id=job_id,
@@ -868,7 +901,11 @@ def requirement_retask(mission_id, req_id):
         budget = json.loads(mission.budget_json or "{}")
     except json.JSONDecodeError:
         pass
-    job_id = create_mission_job(mission.question, int(budget.get("max_sources", 30)))
+    try:
+        job_id = create_mission_job(mission.question, int(budget.get("max_sources", 30)))
+    except JobLimitReached as e:
+        flash(f"Busy: {e}.", "error")
+        return redirect(url_for("mission_view", mission_id=mission_id))
     run_async(update_mission(mission_id, status="collecting", job_id=job_id, error=None))
     start_collection(mission_id)
     flash(f"Re-tasking “{req.title}” with a fresh attempt budget.", "success")

@@ -190,6 +190,26 @@ docker compose exec -T web-researcher python /tmp/x.py`.
   `config.persistent_secret_key`, so logins survive restarts; `FLASK_SECRET_KEY`
   overrides. Cookies are HttpOnly + SameSite=Lax; security headers
   (frame-deny, nosniff, referrer-policy) go out on every response.
+  `QUARRY_BEHIND_PROXY=true` (TLS reverse-proxy mode) adds ProxyFix (real
+  client IPs for the login limiter) and the Secure cookie flag.
+- **Exposure footgun guard:** `QUARRY_BIND` beyond loopback without
+  `QUARRY_PASSWORD` triggers a startup stderr warning and a red banner in the
+  UI (`insecure_exposure()` in `app.py`).
+- **The job store is bounded** (audit fix): `MAX_ACTIVE_JOBS` in-flight jobs
+  (each is a thread + Chromium), finished traces evicted beyond
+  `_DONE_KEEP`/`_DONE_TTL_S`. `create_job`/`create_mission_job` raise
+  `JobLimitReached`; routes flash "Busy". The scheduler's `_launch` creates the
+  job before the mission row, so a full queue skips a scheduled fire cleanly.
+- **Dependencies are pinned** via `constraints.txt` (a `pip freeze` of a
+  verified image) used as `pip install -r requirements.txt -c constraints.txt`.
+  To upgrade deliberately: bump/rebuild, verify, re-freeze.
+- **Known accepted limitations** (documented, not bugs): prompt injection from
+  crawled pages can skew assessor verdicts/brief wording (bounded — the plan is
+  written before any crawling; output HTML is always sanitized); the crawler
+  has no private-IP blocklist (inputs come from search engines; container +
+  loopback bind bound the risk); no CSP (inline scripts everywhere; bleach is
+  the XSS control). Never write `.env` with PowerShell `-Encoding utf8` — the
+  BOM corrupts the first key (pydantic then rejects `﻿COHERE_API_KEY`).
 
 ## Config
 
