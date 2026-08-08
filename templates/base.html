@@ -95,6 +95,14 @@
             </div>
           </div>
         </a>
+        {% if auth_enabled %}
+        <form method="post" action="/logout" style="margin:8px 0 0;">
+          <button type="submit" class="btn btn-sm btn-ghost" style="width:100%;justify-content:center;color:var(--fg-subtle);">
+            <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14.5H3.5v-13H6M10.5 11 14 8l-3.5-3M14 8H6"/></svg>
+            Sign out
+          </button>
+        </form>
+        {% endif %}
       </div>
     </aside>
 

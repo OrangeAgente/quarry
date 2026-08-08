@@ -6,6 +6,7 @@ import storage
 def _client(tmp_path):
     storage.DB_PATH = str(tmp_path / "t.db")
     import app as app_mod
+    app_mod.app._db_initialized = False  # re-init against this test's temp DB
     return app_mod.app.test_client()
 
 

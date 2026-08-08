@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     flask_port: int = 5000
     flask_debug: bool = False
     flask_secret_key: str = ""
+    # Optional login password. Empty = auth disabled (localhost-only posture).
+    # Accepts plaintext or a Werkzeug hash (pbkdf2:/scrypt: prefix).
+    # Deliberately NOT in OVERRIDE_KEYS: the Settings page must never be able
+    # to set or clear it, or an unauthenticated visitor could.
+    quarry_password: str = ""
 
     class Config:
         env_file = ".env"
@@ -110,6 +115,35 @@ def save_overrides(values: dict) -> None:
     except OSError:
         pass  # best-effort (e.g. Windows bind mounts)
     os.replace(tmp, path)
+
+
+def persistent_secret_key() -> str:
+    """A stable Flask secret key. Without one, sessions die on every restart —
+    tolerable for flash messages, unacceptable once login sessions exist.
+    Precedence: FLASK_SECRET_KEY env var, else a key generated once and kept in
+    the data volume (0600)."""
+    if settings.flask_secret_key:
+        return settings.flask_secret_key
+    import secrets as _secrets
+    path = os.path.join(os.path.dirname(settings.db_path) or ".", "secret_key")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            key = f.read().strip()
+        if len(key) >= 32:
+            return key
+    except FileNotFoundError:
+        pass
+    key = _secrets.token_hex(32)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(key)
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, path)
+    return key
 
 
 def known_models() -> list[str]:

@@ -179,7 +179,17 @@ docker compose exec -T web-researcher python /tmp/x.py`.
 - **All crawled markdown is rendered through `markdown_render.render_markdown`** (`markdown_render.py:35`), which runs `markdown` → `bleach.clean` (tag/attr/protocol allowlist) → `bleach.linkify` with `rel="noopener nofollow" target="_blank"` hardening. Never bypass this when displaying crawled content.
 - Live-log messages built in `crawler.py`/`jobs.py` HTML-escape interpolated page data with `html.escape` (`_esc`). Keep doing this — log strings are injected into the DOM.
 - Inputs are bounded at the route layer: query ≤500, extract prompt ≤5000, `max_results` clamped 1–20, full-text `q` ≤200. Jinja autoescape is on everywhere.
-- `flask_secret_key` falls back to a fresh random key per process start when unset.
+- **Auth is optional and env-only** (`auth.py`): setting `QUARRY_PASSWORD`
+  (plaintext or Werkzeug hash) gates every route except `login`/`static` via a
+  `before_request` guard — HTML gets a redirect, `/api/*` gets 401 JSON. The
+  login page is **standalone on purpose** (base.html's sidebar leaks counts,
+  queries, and model config pre-auth). Login is rate-limited per IP in memory.
+  `QUARRY_PASSWORD` must never become a Settings-page override — an
+  unauthenticated visitor could set or clear it.
+- The session signing key persists in `data/secret_key` (0600) via
+  `config.persistent_secret_key`, so logins survive restarts; `FLASK_SECRET_KEY`
+  overrides. Cookies are HttpOnly + SameSite=Lax; security headers
+  (frame-deny, nosniff, referrer-policy) go out on every response.
 
 ## Config
 

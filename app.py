@@ -3,16 +3,17 @@ import hashlib
 import json
 import os
 import re
-import secrets
 import sys
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from flask import Flask, Response, render_template, request, redirect, url_for, flash, stream_with_context
+from flask import (Flask, Response, render_template, request, redirect,
+                   url_for, flash, session, stream_with_context)
 
-from config import settings, save_overrides, known_models
+import auth
+from config import settings, save_overrides, known_models, persistent_secret_key
 from search import web_search
 from crawler import crawl_urls
 from storage import (
@@ -45,7 +46,14 @@ from models import SearchRecord, Agent, Mission, Requirement
 from prompt_templates import build_persona
 
 app = Flask(__name__)
-app.secret_key = settings.flask_secret_key or secrets.token_hex(32)
+# Stable across restarts (generated once into the data volume) so login
+# sessions and flash messages survive a redeploy.
+app.secret_key = persistent_secret_key()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
 
 
 @app.context_processor
@@ -70,6 +78,7 @@ def inject_globals():
             default_results=settings.search_max_results,
             live_job=sidebar["live"],
             previous_jobs=sidebar["previous"],
+            auth_enabled=auth.enabled(),
         )
     except Exception:
         return dict(
@@ -77,6 +86,7 @@ def inject_globals():
             llm_vendor="Cohere", llm_model="command-a-03-2025",
             llm_fast_model="—", default_results=5,
             live_job=None, previous_jobs=[],
+            auth_enabled=auth.enabled(),
         )
 
 
@@ -147,6 +157,68 @@ def ensure_db():
                 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
                     start_scheduler()
                 app._db_initialized = True
+
+
+@app.before_request
+def require_login():
+    """When a password is configured, everything except the login page and
+    static assets requires a session. Registered after ensure_db so startup
+    reconciliation still runs on the first request either way."""
+    if not auth.enabled():
+        return None
+    if request.endpoint in ("login", "static"):
+        return None
+    if session.get("authed"):
+        return None
+    if request.path.startswith("/api/"):
+        return {"error": "authentication required"}, 401
+    nxt = request.full_path if request.method == "GET" else None
+    return redirect(url_for("login", next=nxt))
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return resp
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not auth.enabled() or session.get("authed"):
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        ip = request.remote_addr or "unknown"
+        locked, wait_s = auth.is_locked_out(ip)
+        if locked:
+            flash(f"Too many attempts — try again in {wait_s // 60 + 1} minute(s).", "error")
+            return render_template("login.html"), 429
+
+        if auth.verify_password(request.form.get("password", "")):
+            auth.clear_failures(ip)
+            session.clear()  # fresh session id state on privilege change
+            session["authed"] = True
+            session.permanent = True
+            nxt = request.form.get("next", "")
+            # Only ever redirect within this app (no open redirect).
+            if not nxt.startswith("/") or nxt.startswith("//"):
+                nxt = url_for("index")
+            return redirect(nxt)
+
+        auth.record_failure(ip)
+        flash("Wrong password.", "error")
+        return render_template("login.html"), 401
+
+    return render_template("login.html")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    flash("Signed out.", "success")
+    return redirect(url_for("login") if auth.enabled() else url_for("index"))
 
 
 @app.route("/")
